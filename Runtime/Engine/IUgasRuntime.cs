@@ -13,6 +13,12 @@ namespace Jbltx.Ugas.Runtime
         /// <summary>The owned-tag container (interned handles).</summary>
         GameplayTagContainer OwnedTags { get; }
 
+        /// <summary>Reads the named attribute's current (derived) value; 0 if absent.</summary>
+        float GetCurrentValue(string attributeName);
+
+        /// <summary>Applies a gameplay effect to this controller (e.g. an ability's cost/cooldown).</summary>
+        ActiveGameplayEffect ApplyEffect(GameplayEffectDefinition effect, int level);
+
         /// <summary>Resolves a magnitude definition to a concrete value for this controller.</summary>
         float ResolveMagnitude(in MagnitudeDefinition magnitude, int level);
 
