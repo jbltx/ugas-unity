@@ -20,6 +20,12 @@
   "defineConstraints": [
     "UNITY_INCLUDE_TESTS"
   ],
-  "versionDefines": [],
+  "versionDefines": [
+    {
+      "name": "com.unity.entities",
+      "expression": "1.3.0",
+      "define": "UGAS_DOTS"
+    }
+  ],
   "noEngineReferences": false
 }
