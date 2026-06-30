@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-30
+
+Reworked the package to be **Unity-native** (the 0.1.0 engine-agnostic / runtime-YAML approach was
+the wrong target). Minimum Unity version is now **6000.3 (Unity 6.3)**.
+
+### Changed
+
+- **Definitions are now ScriptableObjects** (`AttributeSetDefinition`, `GameplayEffectDefinition`,
+  `GameplayAbilityDefinition`, `GameplayTagRegistry`, `GameplayControllerConfig`) — Unity serializes
+  them to `.asset` with inspectors. The runtime data model and the runtime YAML parser were removed.
+- **Spec packs are imported, not parsed at runtime.** A new editor assembly `Jbltx.Ugas.Editor`
+  provides a `ScriptedImporter` (`.ugasentity`) and an "Import Spec Pack…" menu that convert spec
+  `entities/*.yaml` into the SO definitions. The validated YAML reader and the spec→SO mapping were
+  re-homed into this editor assembly; **the runtime never parses YAML**.
+- **Runtime uses engine idioms.** New `UgasController : MonoBehaviour` owns runtime attribute/effect/
+  ability instances and ticks them from `Update`. Gameplay tags are interned to `int` handles;
+  modifier aggregation is struct-based and allocation-free; active-effect records are pooled.
+- The §5 aggregation math was factored into a shared, Burst-compatible **kernel** (`AttributeKernel`)
+  re-homed from the validated 0.1.0 logic (still yields the worked `WeaponDamage == 18.0`).
+- Tests moved to the **Unity Test Framework** (EditMode + PlayMode); CI now uses
+  `game-ci/unity-test-runner` (Unity 6000.3.0f1) plus a license-free structure-validation job. The
+  headless `dotnet` build/test path was removed.
+- `package.json`: `unity` → `6000.3` (+ `unityRelease`); removed the Newtonsoft hard dependency.
+
+### Added
+
+- **DOTS/Burst-accelerated backend** as an optional **soft dependency** (`Jbltx.Ugas.Dots`): ECS
+  components + a Burst `ISystem`/`IJobEntity` that call the same shared kernel. The assembly is gated
+  by `versionDefines` (`com.unity.entities` → `UGAS_DOTS`, `com.unity.burst` → `UGAS_BURST`) and
+  `defineConstraints: ["UGAS_DOTS"]`, so the package compiles and runs with Entities/Burst absent.
+  `package.json` lists neither as a dependency; `UgasBackend.Active` reports the path in effect.
+
 ## [0.1.0] - 2026-06-30
 
 Initial scaffold of the UGAS Unity reference implementation (UPM package

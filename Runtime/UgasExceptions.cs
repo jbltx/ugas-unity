@@ -1,6 +1,6 @@
 using System;
 
-namespace Jbltx.Ugas
+namespace Jbltx.Ugas.Runtime
 {
     /// <summary>Base type for exceptions raised by the UGAS runtime.</summary>
     public class UgasException : Exception

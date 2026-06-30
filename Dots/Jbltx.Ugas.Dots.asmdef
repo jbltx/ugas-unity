@@ -1,0 +1,33 @@
+{
+  "name": "Jbltx.Ugas.Dots",
+  "rootNamespace": "Jbltx.Ugas.Dots",
+  "references": [
+    "Jbltx.Ugas.Runtime",
+    "Unity.Entities",
+    "Unity.Burst",
+    "Unity.Collections",
+    "Unity.Mathematics"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "UGAS_DOTS"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.unity.entities",
+      "expression": "1.3.0",
+      "define": "UGAS_DOTS"
+    },
+    {
+      "name": "com.unity.burst",
+      "expression": "1.8.0",
+      "define": "UGAS_BURST"
+    }
+  ],
+  "noEngineReferences": false
+}

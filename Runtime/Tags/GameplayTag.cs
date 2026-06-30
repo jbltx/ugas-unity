@@ -1,61 +1,37 @@
 using System;
-using System.Collections.Generic;
 
 namespace Jbltx.Ugas.Tags
 {
     /// <summary>
-    /// An immutable hierarchical gameplay tag in dot notation (e.g. <c>State.Debuff.Stunned</c>),
-    /// per SPEC §7. Two tags are equal when their (case-sensitive) names match.
+    /// An interned hierarchical gameplay tag handle (SPEC §7). Wraps a single <see cref="int"/>
+    /// index into a <see cref="GameplayTagRegistryRuntime"/>, so tag comparisons are integer
+    /// compares rather than string compares, and the handle is a blittable value usable in DOTS
+    /// components.
     /// </summary>
+    /// <remarks>
+    /// A tag handle is only meaningful relative to the registry that issued it. Resolve names to
+    /// handles once (at load) via <see cref="GameplayTagRegistryRuntime.Resolve"/>, then pass handles
+    /// around. <see cref="None"/> (id -1) is the invalid/none tag.
+    /// </remarks>
     public readonly struct GameplayTag : IEquatable<GameplayTag>
     {
-        /// <summary>The full dot-notation tag name. Empty for the default/none tag.</summary>
-        public string Name { get; }
+        /// <summary>The interned id, or -1 for the none tag.</summary>
+        public readonly int Id;
 
-        public GameplayTag(string name)
-        {
-            Name = name ?? string.Empty;
-        }
+        public GameplayTag(int id) => Id = id;
 
-        /// <summary>True when this tag has no name (the "none" tag).</summary>
-        public bool IsValid => !string.IsNullOrEmpty(Name);
+        /// <summary>The none/invalid tag.</summary>
+        public static GameplayTag None => new GameplayTag(-1);
 
-        /// <summary>
-        /// Enumerates this tag and all of its ancestors, leaf-first. For
-        /// <c>State.Debuff.Stunned</c> this yields <c>State.Debuff.Stunned</c>,
-        /// <c>State.Debuff</c>, then <c>State</c>.
-        /// </summary>
-        public IEnumerable<GameplayTag> SelfAndAncestors()
-        {
-            if (!IsValid) yield break;
-            string name = Name;
-            yield return new GameplayTag(name);
-            int dot;
-            while ((dot = name.LastIndexOf('.')) > 0)
-            {
-                name = name.Substring(0, dot);
-                yield return new GameplayTag(name);
-            }
-        }
+        /// <summary>True when this handle refers to a real registered tag.</summary>
+        public bool IsValid => Id >= 0;
 
-        /// <summary>
-        /// True when this tag is the given <paramref name="other"/> tag or a descendant of it.
-        /// e.g. <c>State.Debuff.Stunned</c> is within <c>State.Debuff</c>.
-        /// </summary>
-        public bool IsWithin(GameplayTag other)
-        {
-            if (!IsValid || !other.IsValid) return false;
-            if (Name == other.Name) return true;
-            return Name.Length > other.Name.Length
-                   && Name.StartsWith(other.Name, StringComparison.Ordinal)
-                   && Name[other.Name.Length] == '.';
-        }
-
-        public bool Equals(GameplayTag other) => string.Equals(Name, other.Name, StringComparison.Ordinal);
+        public bool Equals(GameplayTag other) => Id == other.Id;
         public override bool Equals(object obj) => obj is GameplayTag t && Equals(t);
-        public override int GetHashCode() => Name == null ? 0 : Name.GetHashCode();
-        public override string ToString() => Name;
+        public override int GetHashCode() => Id;
+        public override string ToString() => IsValid ? $"GameplayTag(#{Id})" : "GameplayTag(None)";
 
-        public static implicit operator GameplayTag(string name) => new GameplayTag(name);
+        public static bool operator ==(GameplayTag a, GameplayTag b) => a.Id == b.Id;
+        public static bool operator !=(GameplayTag a, GameplayTag b) => a.Id != b.Id;
     }
 }
