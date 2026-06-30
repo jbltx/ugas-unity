@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Jbltx.Ugas.Abilities;
 using Jbltx.Ugas.Definitions;
+using Jbltx.Ugas.Editor;
 using Jbltx.Ugas.Kernel;
 using Jbltx.Ugas.Runtime;
 using NUnit.Framework;
