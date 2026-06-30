@@ -172,7 +172,7 @@ namespace Jbltx.Ugas.Runtime
         {
             EnsureInitialized();
             _effects.Tick(deltaSeconds);
-            // TODO(tasks): tick active ability tasks here (SPEC §10).
+            foreach (var ability in _abilities.Values) ability.TickTasks(deltaSeconds);
         }
 
         // ---- IUgasRuntime ----

@@ -28,6 +28,10 @@ namespace Jbltx.Ugas.Runtime
         private readonly List<GameplayTag> _activationOwned = new List<GameplayTag>();
         // Tags the cooldown effect grants for its duration; their presence means "on cooldown".
         private readonly List<GameplayTag> _cooldownTags = new List<GameplayTag>();
+        private readonly List<IAbilityTask> _runningTasks = new List<IAbilityTask>();
+
+        /// <summary>The ability's currently-instantiated tasks (§10), in declaration order.</summary>
+        public IReadOnlyList<IAbilityTask> RunningTasks => _runningTasks;
 
         public GameplayAbility(GameplayAbilityDefinition definition, int level = 1)
         {
@@ -145,16 +149,32 @@ namespace Jbltx.Ugas.Runtime
             for (int i = 0; i < _activationOwned.Count; i++) runtime.OwnedTags.AddTag(_activationOwned[i]);
         }
 
-        /// <summary>Called on entering Active. Stub: ability tasks are not yet run (SPEC §10).</summary>
+        /// <summary>Called on entering Active: instantiates and activates the ability's tasks (§10).</summary>
         protected virtual void OnActivate(IUgasRuntime runtime)
         {
-            // TODO(tasks): run Definition.Tasks through an ability-task scheduler.
+            var tasks = Definition.Tasks;
+            for (int i = 0; i < tasks.Count; i++)
+            {
+                var task = AbilityTaskFactory.Create(tasks[i]);
+                task.Activate();
+                _runningTasks.Add(task);
+            }
         }
 
-        /// <summary>Called when ending. <paramref name="cancelled"/> distinguishes cancel from normal end.</summary>
+        /// <summary>Advances this ability's active tasks; called by the controller each tick (§10).</summary>
+        public void TickTasks(float deltaSeconds)
+        {
+            if (State != AbilityState.Active) return;
+            for (int i = 0; i < _runningTasks.Count; i++)
+                if (_runningTasks[i].State == AbilityTaskState.Active) _runningTasks[i].Tick(deltaSeconds);
+        }
+
+        /// <summary>Called when ending: cancels any in-flight tasks. <paramref name="cancelled"/> distinguishes cancel from normal end.</summary>
         protected virtual void OnEnd(bool cancelled)
         {
-            // TODO(tasks): cancel in-flight ability tasks.
+            for (int i = 0; i < _runningTasks.Count; i++)
+                if (_runningTasks[i].State == AbilityTaskState.Active) _runningTasks[i].Cancel();
+            _runningTasks.Clear();
         }
 
         private static void Resolve(GameplayTagRegistryRuntime registry, IReadOnlyList<string> names, List<GameplayTag> into)
