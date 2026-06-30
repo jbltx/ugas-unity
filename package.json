@@ -1,0 +1,27 @@
+{
+  "name": "com.jbltx.ugas",
+  "version": "0.1.0",
+  "displayName": "UGAS - Universal Gameplay Ability System",
+  "description": "Unity reference implementation of the UGAS gameplay specification. Provides the four pillars (Attributes, Gameplay Tags, Gameplay Effects, Gameplay Abilities) plus a Gameplay Controller that consumes the engine-agnostic UGAS schemas directly. See https://github.com/jbltx/ugas for the specification.",
+  "unity": "2021.3",
+  "author": {
+    "name": "Mickael Bonfill",
+    "url": "https://github.com/jbltx"
+  },
+  "license": "MIT",
+  "keywords": [
+    "ugas",
+    "gameplay",
+    "ability-system",
+    "gameplay-ability-system",
+    "attributes",
+    "gameplay-tags"
+  ],
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jbltx/ugas-unity.git"
+  }
+}

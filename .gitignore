@@ -1,0 +1,44 @@
+# Unity-generated folders
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+
+# Asset meta data should only be ignored when the corresponding asset is also ignored
+!/[Aa]ssets/**/*.meta
+
+# Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+# Unity regenerates root-level *.csproj/*.sln from asmdefs; ignore those.
+# The hand-written headless-build projects under ci/ are NOT generated — keep them tracked.
+/*.csproj
+/*.sln
+*.unityproj
+*.user
+*.suo
+*.userprefs
+*.tmp
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+
+# Unity crashlogs
+sysinfo.txt
+crashlog.txt
+
+# Build artifacts from dotnet (CI)
+[Bb]in/
+artifacts/
+
+# NuGet
+*.nupkg

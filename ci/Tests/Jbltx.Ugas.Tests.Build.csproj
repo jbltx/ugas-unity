@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Headless build + run validation project for the UGAS conformance tests.
+
+    Unity compiles Tests/ via Tests/Jbltx.Ugas.Tests.asmdef against the Unity Test Framework.
+    This csproj mirrors that against the standalone NUnit package so CI can actually RUN the
+    conformance suite with `dotnet test` without a Unity license. Tests that exercise stubbed
+    pillars are marked [Ignore] and are reported as skipped.
+
+    Lives in its own directory so its obj/ does not collide with the Runtime build project.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../Tests/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Runtime/Jbltx.Ugas.Runtime.Build.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  </ItemGroup>
+
+</Project>

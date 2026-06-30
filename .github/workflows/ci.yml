@@ -1,0 +1,70 @@
+name: CI
+
+# Builds and validates the UGAS UPM package on every push and pull request.
+#
+# Strategy: the package's Runtime/ is pure C# with no UnityEngine dependency, so we validate it
+# headlessly with the .NET SDK rather than spinning up a licensed Unity editor. The hand-written
+# build projects under ci/ mirror the Unity .asmdef assemblies:
+#   - ci/Runtime  -> compiles Runtime/ as netstandard2.1 (matches Unity 2021.3) with warnings-as-errors
+#   - ci/Tests    -> compiles + RUNS the NUnit conformance suite in Tests/ on net8.0
+# A full in-editor pass via game-ci/unity-test-runner can be layered on later (it requires a
+# UNITY_LICENSE secret), but this workflow runs on any PR with no secrets.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build & conformance tests (dotnet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: |
+          dotnet restore ci/Runtime/Jbltx.Ugas.Runtime.Build.csproj
+          dotnet restore ci/Tests/Jbltx.Ugas.Tests.Build.csproj
+
+      - name: Build Runtime (warnings as errors)
+        run: dotnet build ci/Runtime/Jbltx.Ugas.Runtime.Build.csproj --configuration Release --no-restore
+
+      - name: Run conformance tests
+        run: dotnet test ci/Tests/Jbltx.Ugas.Tests.Build.csproj --configuration Release --logger "trx;LogFileName=results.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/results.trx'
+          if-no-files-found: ignore
+
+  validate-package:
+    name: Validate UPM package manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check package.json is valid JSON and has required fields
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          with open('package.json') as f:
+              pkg = json.load(f)
+          required = ['name', 'version', 'displayName', 'unity']
+          missing = [k for k in required if k not in pkg]
+          assert not missing, f"package.json missing fields: {missing}"
+          assert pkg['name'] == 'com.jbltx.ugas', f"unexpected package name: {pkg['name']}"
+          print(f"OK: {pkg['name']} v{pkg['version']} (Unity {pkg['unity']}+)")
+          PY
