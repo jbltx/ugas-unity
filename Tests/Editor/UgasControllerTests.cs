@@ -157,11 +157,19 @@ namespace Jbltx.Ugas.Tests.Editor
         }
 
         [Test]
-        public void Backend_IsManaged_WhenDotsAbsent()
+        public void Backend_ReflectsWhetherDotsIsCompiledIn()
         {
-            // In a plain test project (no com.unity.entities) the managed path is active.
+            // UgasBackend reports the compiled-in aggregation backend: DOTS when com.unity.entities is
+            // installed (UGAS_DOTS), otherwise the managed path. This assembly mirrors the Runtime's
+            // com.unity.entities -> UGAS_DOTS versionDefine so the expectation matches the runtime
+            // value in both project configurations (with and without Entities).
+#if UGAS_DOTS
+            Assert.That(UgasBackend.Active, Is.EqualTo(UgasBackendKind.Dots));
+            Assert.That(UgasBackend.DotsAvailable, Is.True);
+#else
             Assert.That(UgasBackend.Active, Is.EqualTo(UgasBackendKind.Managed));
             Assert.That(UgasBackend.DotsAvailable, Is.False);
+#endif
         }
     }
 }

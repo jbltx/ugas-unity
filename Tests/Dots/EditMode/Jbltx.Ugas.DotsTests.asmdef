@@ -1,9 +1,13 @@
 {
-  "name": "Jbltx.Ugas.EditorTests",
-  "rootNamespace": "Jbltx.Ugas.Tests.Editor",
+  "name": "Jbltx.Ugas.DotsTests",
+  "rootNamespace": "Jbltx.Ugas.Tests.Dots",
   "references": [
     "Jbltx.Ugas.Runtime",
-    "Jbltx.Ugas.Editor",
+    "Jbltx.Ugas.Dots",
+    "Unity.Entities",
+    "Unity.Collections",
+    "Unity.Burst",
+    "Unity.Mathematics",
     "UnityEngine.TestRunner",
     "UnityEditor.TestRunner"
   ],
@@ -18,13 +22,19 @@
   ],
   "autoReferenced": false,
   "defineConstraints": [
-    "UNITY_INCLUDE_TESTS"
+    "UNITY_INCLUDE_TESTS",
+    "UGAS_DOTS"
   ],
   "versionDefines": [
     {
       "name": "com.unity.entities",
       "expression": "1.3.0",
       "define": "UGAS_DOTS"
+    },
+    {
+      "name": "com.unity.burst",
+      "expression": "1.8.0",
+      "define": "UGAS_BURST"
     }
   ],
   "noEngineReferences": false
