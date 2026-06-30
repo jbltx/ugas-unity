@@ -42,7 +42,7 @@ namespace Jbltx.Ugas.Tests.Play
             _spawned.Add(so);
             so.Populate(
                 "GE_Regen", DurationPolicy.HasDuration,
-                MagnitudeDefinition.Scalable(5f),
+                MagnitudeDefinition.Scalable(0.5f), // 0.5s duration (expires within the 0.8s wait below)
                 new PeriodDefinition { Period = 0.1f, ExecuteOnApplication = false },
                 ExecutionPolicy.RunInParallel, 0,
                 new List<ModifierDefinition>
