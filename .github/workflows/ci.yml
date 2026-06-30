@@ -1,70 +1,128 @@
 name: CI
 
-# Builds and validates the UGAS UPM package on every push and pull request.
+# Validates the UGAS UPM package on every push and pull request.
 #
-# Strategy: the package's Runtime/ is pure C# with no UnityEngine dependency, so we validate it
-# headlessly with the .NET SDK rather than spinning up a licensed Unity editor. The hand-written
-# build projects under ci/ mirror the Unity .asmdef assemblies:
-#   - ci/Runtime  -> compiles Runtime/ as netstandard2.1 (matches Unity 2021.3) with warnings-as-errors
-#   - ci/Tests    -> compiles + RUNS the NUnit conformance suite in Tests/ on net8.0
-# A full in-editor pass via game-ci/unity-test-runner can be layered on later (it requires a
-# UNITY_LICENSE secret), but this workflow runs on any PR with no secrets.
+# The package is Unity-native (ScriptableObjects + MonoBehaviour runtime + an editor
+# ScriptedImporter + an optional DOTS/Burst backend), so it is validated inside the Unity editor
+# via the Unity Test Framework rather than headless dotnet.
+#
+# Two jobs:
+#   * validate-structure — no Unity license required; always runs. Checks package.json and that
+#     every .asmdef is well-formed JSON with the expected soft-dependency gating. Keeps a green
+#     signal on every PR.
+#   * unity-tests — EditMode + PlayMode suites via game-ci/unity-test-runner. MANUAL-ONLY
+#     (workflow_dispatch): never runs on push/PR, so it neither gates the PR nor burns a Unity license
+#     activation automatically. Requires Unity license secrets (see below) + an available seat; trigger
+#     from Actions ▸ CI ▸ Run workflow. Until then, verify locally via ci/UnityProject in the editor.
+#
+# === Unity license secrets the repo owner must add (Settings ▸ Secrets and variables ▸ Actions) ===
+#   Personal (free) license:
+#     UNITY_LICENSE  — contents of the .ulf license file produced by the manual activation flow
+#                      (https://game.ci/docs/github/activation/), plus:
+#     UNITY_EMAIL    — Unity account email
+#     UNITY_PASSWORD — Unity account password
+#   Professional/Plus license (instead of UNITY_LICENSE):
+#     UNITY_EMAIL, UNITY_PASSWORD, UNITY_SERIAL — the Pro serial key
+# The Unity editor version used below (6000.3.0f1) must match a license the account holds.
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
 jobs:
-  build-and-test:
-    name: Build & conformance tests (dotnet)
+  validate-structure:
+    name: Validate package structure (no license)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-
-      - name: Restore
+      - name: Validate package.json
         run: |
-          dotnet restore ci/Runtime/Jbltx.Ugas.Runtime.Build.csproj
-          dotnet restore ci/Tests/Jbltx.Ugas.Tests.Build.csproj
+          python3 - <<'PY'
+          import json
+          pkg = json.load(open('package.json'))
+          for k in ('name', 'version', 'displayName', 'unity'):
+              assert k in pkg, f"package.json missing '{k}'"
+          assert pkg['name'] == 'com.jbltx.ugas', pkg['name']
+          assert pkg['unity'] == '6000.3', f"expected unity 6000.3, got {pkg['unity']}"
+          deps = pkg.get('dependencies', {})
+          # entities/burst must NOT be hard dependencies (soft dependency requirement).
+          for forbidden in ('com.unity.entities', 'com.unity.burst'):
+              assert forbidden not in deps, f"{forbidden} must not be a hard dependency"
+          print(f"OK: {pkg['name']} v{pkg['version']} (Unity {pkg['unity']}.{pkg.get('unityRelease','')})")
+          PY
 
-      - name: Build Runtime (warnings as errors)
-        run: dotnet build ci/Runtime/Jbltx.Ugas.Runtime.Build.csproj --configuration Release --no-restore
+      - name: Validate assembly definitions
+        run: |
+          python3 - <<'PY'
+          import json, glob, sys
+          ok = True
+          dots = json.load(open('Dots/Jbltx.Ugas.Dots.asmdef'))
+          # The DOTS satellite must be gated so it is excluded when Entities is absent.
+          assert 'UGAS_DOTS' in dots.get('defineConstraints', []), "Dots asmdef must defineConstraints UGAS_DOTS"
+          vd = {v['name']: v['define'] for v in dots.get('versionDefines', [])}
+          assert vd.get('com.unity.entities') == 'UGAS_DOTS', "Dots must map com.unity.entities -> UGAS_DOTS"
+          # The runtime must define UGAS_BURST/UGAS_DOTS via versionDefines so it can guard soft usage.
+          rt = json.load(open('Runtime/Jbltx.Ugas.Runtime.asmdef'))
+          rvd = {v['name']: v['define'] for v in rt.get('versionDefines', [])}
+          assert rvd.get('com.unity.burst') == 'UGAS_BURST', "Runtime must map com.unity.burst -> UGAS_BURST"
+          for f in glob.glob('**/*.asmdef', recursive=True):
+              try:
+                  json.load(open(f))
+              except Exception as e:
+                  print(f"INVALID asmdef {f}: {e}"); ok = False
+          print("OK: all .asmdef files are valid JSON; DOTS soft-dependency gating present")
+          sys.exit(0 if ok else 1)
+          PY
 
-      - name: Run conformance tests
-        run: dotnet test ci/Tests/Jbltx.Ugas.Tests.Build.csproj --configuration Release --logger "trx;LogFileName=results.trx"
+  unity-tests:
+    name: Unity tests (EditMode + PlayMode)
+    runs-on: ubuntu-latest
+    # Manual-only (workflow_dispatch): does not run on push/PR, so it never gates the PR or consumes a
+    # Unity license activation automatically. Trigger from Actions ▸ CI ▸ Run workflow once license
+    # secrets + an available activation seat are in place; until then verify locally via ci/UnityProject.
+    if: github.event_name == 'workflow_dispatch'
+    # The package is consumed as an embedded package of a throwaway project at <root>/Packages.
+    # game-ci resolves the project at projectPath; tests in the package's asmdefs are discovered.
+    strategy:
+      fail-fast: false
+      matrix:
+        testMode: [editmode, playmode]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-${{ matrix.testMode }}
+          restore-keys: Library-
+
+      - name: Run ${{ matrix.testMode }} tests
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        with:
+          unityVersion: 6000.3.0f1
+          testMode: ${{ matrix.testMode }}
+          projectPath: ci/UnityProject
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          customParameters: -assemblyNames "Jbltx.Ugas.EditorTests;Jbltx.Ugas.PlayTests"
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
-          path: '**/results.trx'
+          name: test-results-${{ matrix.testMode }}
+          path: artifacts
           if-no-files-found: ignore
-
-  validate-package:
-    name: Validate UPM package manifest
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check package.json is valid JSON and has required fields
-        run: |
-          python3 - <<'PY'
-          import json, sys
-          with open('package.json') as f:
-              pkg = json.load(f)
-          required = ['name', 'version', 'displayName', 'unity']
-          missing = [k for k in required if k not in pkg]
-          assert not missing, f"package.json missing fields: {missing}"
-          assert pkg['name'] == 'com.jbltx.ugas', f"unexpected package name: {pkg['name']}"
-          print(f"OK: {pkg['name']} v{pkg['version']} (Unity {pkg['unity']}+)")
-          PY

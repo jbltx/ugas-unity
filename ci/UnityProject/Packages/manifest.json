@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "com.jbltx.ugas": "file:../../..",
+    "com.unity.test-framework": "1.4.5",
+    "com.unity.modules.jsonserialize": "1.0.0"
+  },
+  "testables": [
+    "com.jbltx.ugas"
+  ]
+}

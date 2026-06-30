@@ -12,14 +12,12 @@
 # Asset meta data should only be ignored when the corresponding asset is also ignored
 !/[Aa]ssets/**/*.meta
 
-# Visual Studio / Rider / VS Code
+# Visual Studio / Rider / VS Code (Unity regenerates these from asmdefs)
 .vs/
 .vscode/
 .idea/
-# Unity regenerates root-level *.csproj/*.sln from asmdefs; ignore those.
-# The hand-written headless-build projects under ci/ are NOT generated — keep them tracked.
-/*.csproj
-/*.sln
+*.csproj
+*.sln
 *.unityproj
 *.user
 *.suo
