@@ -10,9 +10,10 @@ name: CI
 #   * validate-structure — no Unity license required; always runs. Checks package.json and that
 #     every .asmdef is well-formed JSON with the expected soft-dependency gating. Keeps a green
 #     signal on every PR.
-#   * unity-tests — runs the EditMode + PlayMode suites via game-ci/unity-test-runner. This REQUIRES
-#     Unity license secrets that only the repo owner can add (see below). Until the owner adds them,
-#     this job fails/!skips at the activation step — that is expected and is NOT faked green.
+#   * unity-tests — EditMode + PlayMode suites via game-ci/unity-test-runner. MANUAL-ONLY
+#     (workflow_dispatch): never runs on push/PR, so it neither gates the PR nor burns a Unity license
+#     activation automatically. Requires Unity license secrets (see below) + an available seat; trigger
+#     from Actions ▸ CI ▸ Run workflow. Until then, verify locally via ci/UnityProject in the editor.
 #
 # === Unity license secrets the repo owner must add (Settings ▸ Secrets and variables ▸ Actions) ===
 #   Personal (free) license:
@@ -29,6 +30,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -82,6 +84,10 @@ jobs:
   unity-tests:
     name: Unity tests (EditMode + PlayMode)
     runs-on: ubuntu-latest
+    # Manual-only (workflow_dispatch): does not run on push/PR, so it never gates the PR or consumes a
+    # Unity license activation automatically. Trigger from Actions ▸ CI ▸ Run workflow once license
+    # secrets + an available activation seat are in place; until then verify locally via ci/UnityProject.
+    if: github.event_name == 'workflow_dispatch'
     # The package is consumed as an embedded package of a throwaway project at <root>/Packages.
     # game-ci resolves the project at projectPath; tests in the package's asmdefs are discovered.
     strategy:

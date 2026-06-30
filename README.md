@@ -48,7 +48,7 @@ Runtime/                         Jbltx.Ugas.Runtime (always compiled)
 │   ├── GameplayTagRegistry          §7
 │   └── GameplayControllerConfig     §4
 ├── Tags/                        Interned GameplayTag handles + hierarchical container (§7)
-├── Runtime/                     Live instances + UgasController : MonoBehaviour (§4)
+├── Engine/                      Live instances + UgasController : MonoBehaviour (§4)
 │   ├── RuntimeAttribute / RuntimeAttributeSet
 │   ├── ActiveGameplayEffect (pooled) / GameplayEffectsSystem (§9)
 │   ├── GameplayAbility (lifecycle, §8)
@@ -153,7 +153,7 @@ so the identical code runs in the managed path and inside Burst jobs.
 | DOTS/Burst backend (optional) | **Scaffold** — components + Burst job calling the shared kernel |
 | Ability Tasks (§10) | **Interface stub** |
 | State persistence (§14) | Planned (see issues) |
-| Networking & prediction (§13) | **Non-goal** — blocked on jbltx/ugas#4, #5, #7 |
+| Networking & prediction (§13) | **Non-goal (v1)** — spec gaps jbltx/ugas#4/#5/#7 resolved upstream; deferred |
 
 ## Tests & CI
 
@@ -164,14 +164,24 @@ Tests use the **Unity Test Framework**:
 - `Tests/Runtime` (PlayMode) — a `UgasController` ticked off the real player loop advancing a periodic
   effect across frames.
 
-CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) has two jobs:
+### Running tests locally
+
+Open **`ci/UnityProject`** in Unity 6000.3 — it embeds this package (a `file:` reference) with the
+Test Framework wired up, so the EditMode/PlayMode suites appear directly in **Window ▸ General ▸ Test
+Runner**. To exercise the DOTS/Burst path, add `com.unity.entities` to that project (which defines
+`UGAS_DOTS` and compiles the `Dots/` assembly).
+
+### CI
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
 
 - **validate-structure** — no Unity license; checks `package.json` and asmdef soft-dependency gating.
-  Always runs and stays green on every PR.
-- **unity-tests** — runs EditMode + PlayMode via `game-ci/unity-test-runner` on Unity **6000.3.0f1**.
-  This **requires Unity license secrets the repo owner must add** (see the workflow header):
-  `UNITY_EMAIL` + `UNITY_PASSWORD` + either `UNITY_LICENSE` (personal) or `UNITY_SERIAL` (pro).
-  Until those are added, this job is expected to fail at activation — it is not faked green.
+  Runs on every push/PR and is the gating check.
+- **unity-tests** — EditMode + PlayMode via `game-ci/unity-test-runner` on Unity **6000.3.0f1**.
+  **Manual-only** (Actions ▸ CI ▸ Run workflow): it does not run on push/PR, so it never gates a PR or
+  consumes a Unity license activation automatically. It needs the license secrets (see the workflow
+  header) — `UNITY_EMAIL` + `UNITY_PASSWORD` + either `UNITY_LICENSE` (personal) or `UNITY_SERIAL`
+  (pro) — plus an available activation seat. Until then, verify locally (above).
 
 ## License
 
