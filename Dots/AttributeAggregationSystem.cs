@@ -26,7 +26,9 @@ namespace Jbltx.Ugas.Dots
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            new AggregateJob().ScheduleParallel();
+            // Thread the parallel job through state.Dependency so reads of AttributeValue (and the next
+            // system update) correctly wait on it; dropping the handle would let consumers race the job.
+            state.Dependency = new AggregateJob().ScheduleParallel(state.Dependency);
         }
 
         [BurstCompile]
