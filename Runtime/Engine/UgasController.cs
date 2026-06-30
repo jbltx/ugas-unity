@@ -55,14 +55,24 @@ namespace Jbltx.Ugas.Runtime
 
         private void Awake()
         {
+            EnsureInitialized();
+            if (_config != null) Bootstrap(_config);
+        }
+
+        /// <summary>
+        /// Idempotent setup of the controller's runtime systems. Called from Awake, and also from the
+        /// public API so the controller is usable before Awake runs — e.g. in EditMode tests or editor
+        /// tooling, where AddComponent does not invoke Awake.
+        /// </summary>
+        private void EnsureInitialized()
+        {
+            if (_effects != null) return;
             _instanceId = System.Threading.Interlocked.Increment(ref _nextInstanceId);
             _tagRegistry = _config != null && _config.TagRegistry != null
                 ? _config.TagRegistry.BuildRuntime()
                 : new GameplayTagRegistryRuntime();
             _ownedTags = new GameplayTagContainer(_tagRegistry);
             _effects = new GameplayEffectsSystem(this);
-
-            if (_config != null) Bootstrap(_config);
         }
 
         private void Update()
@@ -73,6 +83,7 @@ namespace Jbltx.Ugas.Runtime
         /// <summary>Bootstraps attribute sets, starting values, granted abilities, and starting tags.</summary>
         public void Bootstrap(GameplayControllerConfig config)
         {
+            EnsureInitialized();
             foreach (var setDef in config.AttributeSets)
             {
                 if (setDef != null) RegisterAttributeSet(new RuntimeAttributeSet(setDef));
@@ -100,6 +111,7 @@ namespace Jbltx.Ugas.Runtime
 
         public void RegisterAttributeSet(RuntimeAttributeSet set)
         {
+            EnsureInitialized();
             foreach (var dep in set.Dependencies)
             {
                 if (!_sets.ContainsKey(dep))
@@ -124,6 +136,7 @@ namespace Jbltx.Ugas.Runtime
 
         public GameplayAbility GrantAbility(GameplayAbilityDefinition ability, int level = 1)
         {
+            EnsureInitialized();
             var instance = new GameplayAbility(ability, level);
             instance.Grant(this);
             _abilities[ability.AbilityName] = instance;
@@ -133,20 +146,31 @@ namespace Jbltx.Ugas.Runtime
         public GameplayAbility GetAbility(string abilityName) =>
             _abilities.TryGetValue(abilityName, out var a) ? a : null;
 
-        public bool TryActivateAbility(string abilityName) =>
-            _abilities.TryGetValue(abilityName, out var ability) && ability.TryActivate(this);
+        public bool TryActivateAbility(string abilityName)
+        {
+            EnsureInitialized();
+            return _abilities.TryGetValue(abilityName, out var ability) && ability.TryActivate(this);
+        }
 
         // ---- Effects ----
 
-        public ActiveGameplayEffect ApplyEffect(GameplayEffectDefinition effect, int level = 1) =>
-            _effects.ApplyEffect(effect, level, _instanceId);
+        public ActiveGameplayEffect ApplyEffect(GameplayEffectDefinition effect, int level = 1)
+        {
+            EnsureInitialized();
+            return _effects.ApplyEffect(effect, level, _instanceId);
+        }
 
-        public bool RemoveEffect(int handle) => _effects.RemoveEffect(handle);
+        public bool RemoveEffect(int handle)
+        {
+            EnsureInitialized();
+            return _effects.RemoveEffect(handle);
+        }
 
         // ---- Tick ----
 
         public void Tick(float deltaSeconds)
         {
+            EnsureInitialized();
             _effects.Tick(deltaSeconds);
             // TODO(tasks): tick active ability tasks here (SPEC §10).
         }
@@ -191,8 +215,8 @@ namespace Jbltx.Ugas.Runtime
             if (attr != null) attr.BaseValue = value;
         }
 
-        public void GrantTag(string tag) => _ownedTags.AddTag(tag);
-        public void RemoveGrantedTag(string tag) => _ownedTags.RemoveTag(tag);
+        public void GrantTag(string tag) { EnsureInitialized(); _ownedTags.AddTag(tag); }
+        public void RemoveGrantedTag(string tag) { EnsureInitialized(); _ownedTags.RemoveTag(tag); }
 
         /// <summary>
         /// Recomputes every attribute's current value through the §5 kernel from the active-effect
@@ -201,6 +225,7 @@ namespace Jbltx.Ugas.Runtime
         /// </summary>
         public void RecalculateAttributes()
         {
+            EnsureInitialized();
             // Intern every channel referenced by active effects up front, so the scratch buffer is
             // sized to cover all channel ids before aggregation (a channel id >= scratch length would
             // otherwise be misread by the kernel as an implicit singleton channel).
