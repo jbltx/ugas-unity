@@ -37,6 +37,10 @@ namespace Jbltx.Ugas.Runtime
         private GameplayTagRegistryRuntime _tagRegistry;
         private GameplayTagContainer _ownedTags;
         private GameplayEffectsSystem _effects;
+        // Unique per-controller source id for effect application (§9). A process-local counter, not
+        // Object.GetInstanceID(): that API is deprecated in newer Unity (→ GetEntityId) and we only
+        // need a stable unique id here, not Unity's actual instance id.
+        private static int _nextInstanceId;
         private int _instanceId;
         private long _modifierSequence;
 
@@ -51,7 +55,7 @@ namespace Jbltx.Ugas.Runtime
 
         private void Awake()
         {
-            _instanceId = GetInstanceID();
+            _instanceId = System.Threading.Interlocked.Increment(ref _nextInstanceId);
             _tagRegistry = _config != null && _config.TagRegistry != null
                 ? _config.TagRegistry.BuildRuntime()
                 : new GameplayTagRegistryRuntime();
