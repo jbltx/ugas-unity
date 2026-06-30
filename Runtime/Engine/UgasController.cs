@@ -206,13 +206,13 @@ namespace Jbltx.Ugas.Runtime
         public void AddToBaseValue(string attributeName, float delta)
         {
             var attr = FindAttribute(attributeName);
-            if (attr != null) attr.BaseValue += delta;
+            if (attr != null) { attr.BaseValue += delta; ClampBase(attr); }
         }
 
         public void SetBaseValue(string attributeName, float value)
         {
             var attr = FindAttribute(attributeName);
-            if (attr != null) attr.BaseValue = value;
+            if (attr != null) { attr.BaseValue = value; ClampBase(attr); }
         }
 
         public void GrantTag(string tag) { EnsureInitialized(); _ownedTags.AddTag(tag); }
@@ -238,7 +238,7 @@ namespace Jbltx.Ugas.Runtime
                 foreach (var attr in set.Attributes)
                 {
                     int count = GatherModifiers(attr.Name);
-                    set.ResolveClamp(attr.Definition, resolveRef,
+                    RuntimeAttributeSet.ResolveClamp(attr.Definition, resolveRef,
                         out bool hasMin, out float min, out bool hasMax, out float max);
 
                     attr.CurrentValue = AttributeKernel.Aggregate(
@@ -254,6 +254,19 @@ namespace Jbltx.Ugas.Runtime
         {
             var attr = FindAttribute(name);
             return attr != null ? attr.CurrentValue : (float?)null;
+        }
+
+        // Clamps an attribute's BASE value to its resolved [min,max] (incl. attribute-reference bounds
+        // like Health -> MaxHealth). Instant/periodic modifiers mutate base directly (SPEC §9.2), so
+        // without this an over-heal banks base above the max while only the derived current clamps.
+        private void ClampBase(RuntimeAttribute attr)
+        {
+            RuntimeAttributeSet.ResolveClamp(attr.Definition, ResolveAttributeRef,
+                out bool hasMin, out float min, out bool hasMax, out float max);
+            float v = attr.BaseValue;
+            if (hasMin && v < min) v = min;
+            if (hasMax && v > max) v = max;
+            attr.BaseValue = v;
         }
 
         // Fills _modBuffer with resolved modifiers for one attribute; returns the count.

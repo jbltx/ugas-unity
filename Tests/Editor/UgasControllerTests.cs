@@ -123,6 +123,11 @@ namespace Jbltx.Ugas.Tests.Editor
         {
             var gc = NewController();
             gc.RegisterAttributeSet(new RuntimeAttributeSet(RpgSet()));
+            // Heal from a damaged state: base Health is now clamped to MaxHealth, so regenerating
+            // while already at full would (correctly) gain nothing.
+            gc.FindAttribute("MaxHealth").BaseValue = 100f;
+            gc.FindAttribute("Health").BaseValue = 50f;
+            gc.RecalculateAttributes();
             float start = gc.GetBaseValue("Health");
             gc.ApplyEffect(Effect("rpg_effect_regeneration.yaml.txt")); // +5 Health/s for 5s
             gc.Tick(3.5f); // ticks at t=1,2,3 => +15

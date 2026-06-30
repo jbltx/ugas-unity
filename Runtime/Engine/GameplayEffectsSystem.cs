@@ -24,6 +24,11 @@ namespace Jbltx.Ugas.Runtime
         private readonly Stack<ActiveGameplayEffect> _pool = new Stack<ActiveGameplayEffect>();
         private int _nextHandle = 1;
 
+        // Float tolerance for period/duration boundaries: a 0.5s duration decremented by 0.1f five times
+        // leaves a tiny positive residual, which would otherwise let a HasDuration effect live one period
+        // too long (and fire an extra tick). Above float error, below any realistic sub-ms period.
+        private const float Epsilon = 1e-4f;
+
         /// <summary>Raised when an Instant effect executes or a periodic tick fires (effect, level).</summary>
         public event Action<GameplayEffectDefinition, int> OnEffectExecuted;
 
@@ -106,7 +111,7 @@ namespace Jbltx.Ugas.Runtime
                 {
                     active.PeriodElapsed += deltaSeconds;
                     float period = active.Definition.Period.Period;
-                    while (active.PeriodElapsed >= period)
+                    while (period > 0f && active.PeriodElapsed >= period - Epsilon)
                     {
                         active.PeriodElapsed -= period;
                         Execute(active.Definition, active.Level);
@@ -117,7 +122,7 @@ namespace Jbltx.Ugas.Runtime
                 if (active.HasDuration)
                 {
                     active.RemainingDuration -= deltaSeconds;
-                    if (active.RemainingDuration <= 0f)
+                    if (active.RemainingDuration <= Epsilon)
                     {
                         RemoveAt(i);
                     }

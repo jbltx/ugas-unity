@@ -41,7 +41,7 @@ namespace Jbltx.Ugas.Runtime
         /// <paramref name="resolveRef"/>, which should return the current value of the referenced
         /// attribute (searching across all sets on the controller).
         /// </summary>
-        public void ResolveClamp(in AttributeDefinition def, System.Func<string, float?> resolveRef,
+        public static void ResolveClamp(in AttributeDefinition def, System.Func<string, float?> resolveRef,
             out bool hasMin, out float min, out bool hasMax, out float max)
         {
             ResolveBound(def.Min, resolveRef, out hasMin, out min);
