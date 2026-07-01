@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Jbltx.Ugas.Definitions;
 using Jbltx.Ugas.Kernel;
+using Jbltx.Ugas.Spatial;
 using Jbltx.Ugas.Tags;
 using UnityEngine;
 
@@ -164,6 +165,60 @@ namespace Jbltx.Ugas.Runtime
         {
             EnsureInitialized();
             return _effects.RemoveEffect(handle);
+        }
+
+        /// <summary>
+        /// Applies <paramref name="effect"/> over an area (SPEC §17.3): resolves the target set with a
+        /// single §17.2 query about <paramref name="origin"/> at call time (a snapshot), then applies
+        /// the effect to each matched controller — each honoring its own §9.6 execution policy exactly
+        /// as a single-target application would. Returns the affected set, nearest-first.
+        /// </summary>
+        /// <remarks>
+        /// The <paramref name="provider"/> is the spatial index the caller maintains — the engine
+        /// binding owns it, keeping the controller free of global state. The radius resolves through
+        /// <see cref="ResolveMagnitude"/> against THIS controller (the instigator), so an AttributeBased
+        /// radius scales with the caster's stat (§17.3). Tag filters resolve against this controller's
+        /// registry, which is correct when the world shares one registry (the norm). A Cone area is
+        /// currently resolved as a Sphere of the same radius until the provider gains <c>OverlapCone</c>.
+        /// </remarks>
+        public IReadOnlyList<UgasController> ApplyAreaEffect(
+            GameplayEffectDefinition effect, Vector3 origin, ISpatialQueryProvider provider, int level = 1)
+        {
+            EnsureInitialized();
+            if (effect == null || provider == null || !effect.HasArea)
+                return Array.Empty<UgasController>();
+
+            var area = effect.Area;
+            float radius = ResolveMagnitude(area.Radius, level);
+            var filter = new SpatialFilter
+            {
+                RequireTags = ResolveTags(area.RequireTags),
+                ExcludeTags = ResolveTags(area.ExcludeTags),
+                MaxResults = area.MaxTargets,
+            };
+
+            if (area.Shape == AreaShape.Cone)
+                Debug.LogWarning($"[UGAS] Effect '{effect.EffectName}' declares a Cone area; the reference provider resolves it as a Sphere until OverlapCone lands.");
+
+            var hits = provider.OverlapSphere(origin, radius, filter);
+            // §17.3 rule 1: snapshot the set before applying — the provider reuses its result buffer,
+            // and applying effects must not observe a set mutated mid-iteration.
+            var targets = new List<UgasController>(hits);
+            for (int i = 0; i < targets.Count; i++) targets[i].ApplyEffect(effect, level);
+            return targets;
+        }
+
+        // Resolves tag names to interned handles in this controller's registry; null when empty.
+        private IReadOnlyList<GameplayTag> ResolveTags(List<string> names)
+        {
+            if (names == null || names.Count == 0) return null;
+            var tags = new List<GameplayTag>(names.Count);
+            for (int i = 0; i < names.Count; i++)
+            {
+                var t = _tagRegistry.Resolve(names[i]);
+                if (t.IsValid) tags.Add(t);
+            }
+            return tags;
         }
 
         // ---- Tick ----
