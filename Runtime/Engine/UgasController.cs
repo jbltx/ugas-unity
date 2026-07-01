@@ -158,7 +158,23 @@ namespace Jbltx.Ugas.Runtime
         public ActiveGameplayEffect ApplyEffect(GameplayEffectDefinition effect, int level = 1)
         {
             EnsureInitialized();
+            if (!MeetsApplicationRequirements(effect)) return null; // §9 ApplicationRequiredTags gate
             return _effects.ApplyEffect(effect, level, _instanceId);
+        }
+
+        // §9: an effect applies only while the owner currently owns every ApplicationRequiredTag
+        // (hierarchical, §7). Names resolve non-interning against the owner's registry — an unknown
+        // required tag is, by definition, not owned, so the application is refused.
+        private bool MeetsApplicationRequirements(GameplayEffectDefinition effect)
+        {
+            var required = effect.ApplicationRequiredTags;
+            if (required == null || required.Count == 0) return true;
+            for (int i = 0; i < required.Count; i++)
+            {
+                var tag = _tagRegistry.Find(required[i]);
+                if (!tag.IsValid || !_ownedTags.HasTag(tag)) return false;
+            }
+            return true;
         }
 
         public bool RemoveEffect(int handle)
