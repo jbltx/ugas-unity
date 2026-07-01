@@ -12,17 +12,25 @@ namespace Jbltx.Ugas.Runtime
     /// Instant/periodic/expiry logic onto Unity-native types.
     /// </summary>
     /// <remarks>
-    /// Active-effect records are pooled to avoid per-application allocations. The
-    /// <see cref="ExecutionPolicy.RunInSequence"/> / <see cref="ExecutionPolicy.RunInMerge"/>
-    /// scheduling and custom executions remain stubbed (see TODOs); only
-    /// <see cref="ExecutionPolicy.RunInParallel"/> is wired.
+    /// Active-effect records are pooled to avoid per-application allocations. All three execution
+    /// policies are wired: <see cref="ExecutionPolicy.RunInParallel"/> (independent instances),
+    /// <see cref="ExecutionPolicy.RunInMerge"/> (stack + refresh duration on the existing instance),
+    /// and <see cref="ExecutionPolicy.RunInSequence"/> (queue behind the active instance, promoted on
+    /// expiry). Custom Executions (calculation classes) remain stubbed (see TODO in Execute).
     /// </remarks>
     public sealed class GameplayEffectsSystem
     {
         private readonly IUgasRuntime _runtime;
         private readonly List<ActiveGameplayEffect> _active = new List<ActiveGameplayEffect>();
         private readonly Stack<ActiveGameplayEffect> _pool = new Stack<ActiveGameplayEffect>();
+        // RunInSequence: instances queued behind the active one, promoted to active on its expiry.
+        private readonly List<ActiveGameplayEffect> _pending = new List<ActiveGameplayEffect>();
         private int _nextHandle = 1;
+
+        // Float tolerance for period/duration boundaries: a 0.5s duration decremented by 0.1f five times
+        // leaves a tiny positive residual, which would otherwise let a HasDuration effect live one period
+        // too long (and fire an extra tick). Above float error, below any realistic sub-ms period.
+        private const float Epsilon = 1e-4f;
 
         /// <summary>Raised when an Instant effect executes or a periodic tick fires (effect, level).</summary>
         public event Action<GameplayEffectDefinition, int> OnEffectExecuted;
@@ -48,25 +56,70 @@ namespace Jbltx.Ugas.Runtime
                 return null;
             }
 
-            // TODO: honor ExecutionPolicy. Only RunInParallel (independent instances) is wired;
-            // RunInSequence should queue instances; RunInMerge should fold into one extending duration.
-            var active = Rent();
-            active.Handle = _nextHandle++;
-            active.Definition = effect;
-            active.Level = level;
-            active.InstigatorId = instigatorId;
+            // Execution policy (§9.6) governs how re-applying an already-active effect combines.
+            var existing = FindActive(effect);
+            if (existing != null)
+            {
+                switch (effect.ExecutionPolicy)
+                {
+                    case ExecutionPolicy.RunInMerge:
+                        // Fold into the existing instance: add a stack and refresh its duration.
+                        existing.Stacks++;
+                        if (existing.HasDuration)
+                            existing.RemainingDuration = _runtime.ResolveMagnitude(effect.Duration, level);
+                        if (existing.IsPeriodic && effect.Period.ExecuteOnApplication)
+                        {
+                            Execute(effect, level);
+                            existing.ExecutionCount++;
+                        }
+                        _runtime.RecalculateAttributes();
+                        return existing;
 
+                    case ExecutionPolicy.RunInSequence:
+                        // Queue behind the active instance; promoted when it ends (see RemoveAt).
+                        var queued = NewRecord(effect, level, instigatorId);
+                        _pending.Add(queued);
+                        return queued;
+
+                    // RunInParallel: fall through and add an independent instance.
+                }
+            }
+
+            return ActivateNew(effect, level, instigatorId);
+        }
+
+        private ActiveGameplayEffect FindActive(GameplayEffectDefinition effect)
+        {
+            for (int i = 0; i < _active.Count; i++)
+                if (_active[i].Definition == effect) return _active[i];
+            return null;
+        }
+
+        // Builds a pooled record without adding it to the active set.
+        private ActiveGameplayEffect NewRecord(GameplayEffectDefinition effect, int level, int instigatorId)
+        {
+            var a = Rent();
+            a.Handle = _nextHandle++;
+            a.Definition = effect;
+            a.Level = level;
+            a.InstigatorId = instigatorId;
             if (effect.DurationPolicy == DurationPolicy.HasDuration)
             {
-                active.HasDuration = true;
-                active.RemainingDuration = _runtime.ResolveMagnitude(effect.Duration, level);
+                a.HasDuration = true;
+                a.RemainingDuration = _runtime.ResolveMagnitude(effect.Duration, level);
             }
             else
             {
-                active.HasDuration = false;
-                active.RemainingDuration = -1f;
+                a.HasDuration = false;
+                a.RemainingDuration = -1f;
             }
+            return a;
+        }
 
+        // Adds a record to the active set: grants tags, fires an apply-time periodic tick, recalculates.
+        private ActiveGameplayEffect ActivateNew(GameplayEffectDefinition effect, int level, int instigatorId)
+        {
+            var active = NewRecord(effect, level, instigatorId);
             _active.Add(active);
 
             var granted = effect.GrantedTags;
@@ -86,9 +139,12 @@ namespace Jbltx.Ugas.Runtime
         public bool RemoveEffect(int handle)
         {
             int idx = _active.FindIndex(a => a.Handle == handle);
-            if (idx < 0) return false;
-            RemoveAt(idx);
-            return true;
+            if (idx >= 0) { RemoveAt(idx); return true; }
+
+            // May be a queued (RunInSequence) instance that has not activated yet.
+            int p = _pending.FindIndex(a => a.Handle == handle);
+            if (p >= 0) { Return(_pending[p]); _pending.RemoveAt(p); return true; }
+            return false;
         }
 
         /// <summary>
@@ -106,7 +162,7 @@ namespace Jbltx.Ugas.Runtime
                 {
                     active.PeriodElapsed += deltaSeconds;
                     float period = active.Definition.Period.Period;
-                    while (active.PeriodElapsed >= period)
+                    while (period > 0f && active.PeriodElapsed >= period - Epsilon)
                     {
                         active.PeriodElapsed -= period;
                         Execute(active.Definition, active.Level);
@@ -117,7 +173,7 @@ namespace Jbltx.Ugas.Runtime
                 if (active.HasDuration)
                 {
                     active.RemainingDuration -= deltaSeconds;
-                    if (active.RemainingDuration <= 0f)
+                    if (active.RemainingDuration <= Epsilon)
                     {
                         RemoveAt(i);
                     }
@@ -130,10 +186,29 @@ namespace Jbltx.Ugas.Runtime
             var active = _active[idx];
             _active.RemoveAt(idx);
 
-            var granted = active.Definition.GrantedTags;
+            var endedDef = active.Definition;
+            var granted = endedDef.GrantedTags;
             for (int i = 0; i < granted.Count; i++) _runtime.RemoveGrantedTag(granted[i]);
-
             Return(active);
+
+            // RunInSequence: promote the next queued instance of this definition, if any.
+            if (endedDef.ExecutionPolicy == ExecutionPolicy.RunInSequence)
+            {
+                int p = _pending.FindIndex(e => e.Definition == endedDef);
+                if (p >= 0)
+                {
+                    var next = _pending[p];
+                    _pending.RemoveAt(p);
+                    _active.Add(next);
+                    for (int i = 0; i < granted.Count; i++) _runtime.GrantTag(granted[i]);
+                    if (next.IsPeriodic && endedDef.Period.ExecuteOnApplication)
+                    {
+                        Execute(endedDef, next.Level);
+                        next.ExecutionCount++;
+                    }
+                }
+            }
+
             _runtime.RecalculateAttributes();
         }
 

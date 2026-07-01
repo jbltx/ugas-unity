@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Jbltx.Ugas.Abilities;
 using Jbltx.Ugas.Definitions;
+using Jbltx.Ugas.Kernel;
 using Jbltx.Ugas.Tags;
 
 namespace Jbltx.Ugas.Runtime
@@ -9,8 +10,8 @@ namespace Jbltx.Ugas.Runtime
     /// A live gameplay ability and its §8 lifecycle state machine, re-homed onto the Unity-native
     /// runtime. Drives NotGranted → Granted → Activating → Active → Ending → Granted, with
     /// Activating → Granted on validation failure. Activation-tag checks use interned handles
-    /// resolved once at grant time. Cost/cooldown application and ability-task execution remain
-    /// virtual stubs.
+    /// resolved once at grant time. Cost and cooldown are applied as GameplayEffects; ability-task
+    /// execution (§10) remains a virtual stub.
     /// </summary>
     public class GameplayAbility
     {
@@ -25,6 +26,12 @@ namespace Jbltx.Ugas.Runtime
         private readonly List<GameplayTag> _activationBlocked = new List<GameplayTag>();
         private readonly List<GameplayTag> _blockedBy = new List<GameplayTag>();
         private readonly List<GameplayTag> _activationOwned = new List<GameplayTag>();
+        // Tags the cooldown effect grants for its duration; their presence means "on cooldown".
+        private readonly List<GameplayTag> _cooldownTags = new List<GameplayTag>();
+        private readonly List<IAbilityTask> _runningTasks = new List<IAbilityTask>();
+
+        /// <summary>The ability's currently-instantiated tasks (§10), in declaration order.</summary>
+        public IReadOnlyList<IAbilityTask> RunningTasks => _runningTasks;
 
         public GameplayAbility(GameplayAbilityDefinition definition, int level = 1)
         {
@@ -41,6 +48,8 @@ namespace Jbltx.Ugas.Runtime
             Resolve(registry, Definition.Tags.ActivationBlockedTags, _activationBlocked);
             Resolve(registry, Definition.Tags.BlockedByTags, _blockedBy);
             Resolve(registry, Definition.Tags.ActivationOwnedTags, _activationOwned);
+            _cooldownTags.Clear();
+            if (Definition.Cooldown != null) Resolve(registry, Definition.Cooldown.GrantedTags, _cooldownTags);
             State = AbilityState.Granted;
         }
 
@@ -112,32 +121,63 @@ namespace Jbltx.Ugas.Runtime
 
         // ---- Hooks (overridable; default behaviour intentionally minimal) ----
 
-        /// <summary>Validates the cost effect can be paid. Stub: always affordable.</summary>
-        protected virtual bool CheckCost(IUgasRuntime runtime) => true; // TODO: evaluate Definition.Cost
+        /// <summary>Validates the cost can be paid: each flat resource spend stays >= 0 (§8.5).</summary>
+        protected virtual bool CheckCost(IUgasRuntime runtime)
+        {
+            var cost = Definition.Cost;
+            if (cost == null) return true;
+            var mods = cost.Modifiers;
+            for (int i = 0; i < mods.Count; i++)
+            {
+                var m = mods[i];
+                if (m.Operation != ModifierOp.Add) continue; // costs are flat resource deltas
+                float delta = runtime.ResolveMagnitude(m.Magnitude, Level);
+                if (delta < 0f && runtime.GetCurrentValue(m.Attribute) + delta < 0f) return false;
+            }
+            return true;
+        }
 
-        /// <summary>Validates the cooldown tag is absent. Stub: always available.</summary>
-        protected virtual bool CheckCooldown(IUgasRuntime runtime) => true; // TODO: check cooldown tag
+        /// <summary>Validates the ability is not on cooldown (no cooldown-granted tag present, §8.5).</summary>
+        protected virtual bool CheckCooldown(IUgasRuntime runtime)
+            => _cooldownTags.Count == 0 || !runtime.OwnedTags.HasAny(_cooldownTags);
 
-        /// <summary>Commit phase (§8): grant ActivationOwnedTags. Cost/cooldown application is a TODO.</summary>
+        /// <summary>Commit phase (§8): apply Cost (Instant) + Cooldown (durational) effects, grant owned tags.</summary>
         protected virtual void Commit(IUgasRuntime runtime)
         {
-            // TODO: apply Definition.Cost and Definition.Cooldown as GameplayEffects.
+            if (Definition.Cost != null) runtime.ApplyEffect(Definition.Cost, Level);
+            if (Definition.Cooldown != null) runtime.ApplyEffect(Definition.Cooldown, Level);
             for (int i = 0; i < _activationOwned.Count; i++) runtime.OwnedTags.AddTag(_activationOwned[i]);
         }
 
-        /// <summary>Called on entering Active. Stub: ability tasks are not yet run (SPEC §10).</summary>
+        /// <summary>Called on entering Active: instantiates and activates the ability's tasks (§10).</summary>
         protected virtual void OnActivate(IUgasRuntime runtime)
         {
-            // TODO(tasks): run Definition.Tasks through an ability-task scheduler.
+            var tasks = Definition.Tasks;
+            for (int i = 0; i < tasks.Count; i++)
+            {
+                var task = AbilityTaskFactory.Create(tasks[i]);
+                task.Activate();
+                _runningTasks.Add(task);
+            }
         }
 
-        /// <summary>Called when ending. <paramref name="cancelled"/> distinguishes cancel from normal end.</summary>
+        /// <summary>Advances this ability's active tasks; called by the controller each tick (§10).</summary>
+        public void TickTasks(float deltaSeconds)
+        {
+            if (State != AbilityState.Active) return;
+            for (int i = 0; i < _runningTasks.Count; i++)
+                if (_runningTasks[i].State == AbilityTaskState.Active) _runningTasks[i].Tick(deltaSeconds);
+        }
+
+        /// <summary>Called when ending: cancels any in-flight tasks. <paramref name="cancelled"/> distinguishes cancel from normal end.</summary>
         protected virtual void OnEnd(bool cancelled)
         {
-            // TODO(tasks): cancel in-flight ability tasks.
+            for (int i = 0; i < _runningTasks.Count; i++)
+                if (_runningTasks[i].State == AbilityTaskState.Active) _runningTasks[i].Cancel();
+            _runningTasks.Clear();
         }
 
-        private static void Resolve(GameplayTagRegistryRuntime registry, List<string> names, List<GameplayTag> into)
+        private static void Resolve(GameplayTagRegistryRuntime registry, IReadOnlyList<string> names, List<GameplayTag> into)
         {
             into.Clear();
             if (names == null) return;
