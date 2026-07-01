@@ -225,5 +225,64 @@ namespace Jbltx.Ugas.Tests.Editor
             player.Tick(0.5f); // period 2: -10 -> 80
             Assert.That(player.GetBaseValue("Health"), Is.EqualTo(80f).Within(1e-4f), "two ticks of spike damage");
         }
+
+        /// <summary>
+        /// The full ARPG chain (§8 → §10.3 → §17.3): activating the Barbarian's whirlwind ability runs
+        /// its authored ApplyEffectToActorsInRadius task, which queries the instigator's spatial provider
+        /// and applies the hit effect to every enemy in radius — sparing the physically immune and the
+        /// out-of-range. Proves abilities drive spatial gameplay, not just manual ApplyAreaEffect calls.
+        /// </summary>
+        [Test]
+        public void Arpg_WhirlwindAbility_ActivationDrivesAreaEffect()
+        {
+            var barbarian = Combatant("Barbarian", Vector3.zero);
+
+            // The whirlwind's hit effect — the task supplies the radius + ignore-tag, so this is plain damage.
+            var hit = ScriptableObject.CreateInstance<GameplayEffectDefinition>();
+            _spawned.Add(hit);
+            hit.Populate("GE_WhirlwindHit", DurationPolicy.Instant, default, default, ExecutionPolicy.RunInParallel, 0,
+                new List<ModifierDefinition> { new ModifierDefinition { Attribute = "Health", Operation = ModifierOp.Add, Magnitude = MagnitudeDefinition.Scalable(-18f) } },
+                null, null, null);
+            barbarian.RegisterEffect(hit);
+
+            var world = new UgasSpatialWorld();
+            barbarian.SpatialProvider = world.Provider; // engine binding hands the instigator its provider
+
+            var goblinA = Combatant("GoblinA", new Vector3(3, 0, 0));
+            var goblinB = Combatant("GoblinB", new Vector3(4, 0, 0));
+            var golem = Combatant("Golem", new Vector3(2, 0, 0));
+            golem.GrantTag("Immunity.Physical");
+            var straggler = Combatant("Straggler", new Vector3(20, 0, 0));
+            world.Register(goblinA);
+            world.Register(goblinB);
+            world.Register(golem);
+            world.Register(straggler);
+
+            // Author GA_Whirlwind with its signature task (matches rpg_ability_whirlwind.yaml.txt).
+            var whirlwind = ScriptableObject.CreateInstance<GameplayAbilityDefinition>();
+            _spawned.Add(whirlwind);
+            whirlwind.Populate("GA_Whirlwind", default, new List<AbilityTaskDefinition>
+            {
+                new AbilityTaskDefinition
+                {
+                    Type = "ApplyEffectToActorsInRadius",
+                    Params = new List<TaskParam>
+                    {
+                        new TaskParam { Key = "Radius", Value = "5" },
+                        new TaskParam { Key = "EffectClass", Value = "GE_WhirlwindHit" },
+                        new TaskParam { Key = "IgnoreTargetsWithTag", Value = "Immunity.Physical" },
+                    },
+                },
+            }, null, null);
+
+            barbarian.GrantAbility(whirlwind);
+            Assert.That(barbarian.TryActivateAbility("GA_Whirlwind"), Is.True, "no cost/cooldown/requirement → activates");
+            barbarian.Tick(0.016f); // ticks the ability's tasks → the AoE fires
+
+            Assert.That(goblinA.GetBaseValue("Health"), Is.EqualTo(82f).Within(1e-4f));
+            Assert.That(goblinB.GetBaseValue("Health"), Is.EqualTo(82f).Within(1e-4f));
+            Assert.That(golem.GetBaseValue("Health"), Is.EqualTo(100f).Within(1e-4f), "physically immune → spared");
+            Assert.That(straggler.GetBaseValue("Health"), Is.EqualTo(100f).Within(1e-4f), "out of range → spared");
+        }
     }
 }
