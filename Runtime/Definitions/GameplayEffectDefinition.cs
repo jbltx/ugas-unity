@@ -113,6 +113,9 @@ namespace Jbltx.Ugas.Definitions
         [SerializeField] private List<string> _gameplayCues = new List<string>();
         [SerializeField] private AreaDefinition _area;
 
+        [Tooltip("Optional ExecCalc_* class name (§9.6): stateful/branching math run when this effect executes.")]
+        [SerializeField] private string _executionClass;
+
         public string EffectName => _effectName;
         public DurationPolicy DurationPolicy => _durationPolicy;
         public MagnitudeDefinition Duration => _duration;
@@ -133,6 +136,15 @@ namespace Jbltx.Ugas.Definitions
 
         /// <summary>Sets the area definition (editor importer / authoring / tests).</summary>
         public void SetArea(in AreaDefinition area) => _area = area;
+
+        /// <summary>The registered ExecCalc_* class run when this effect executes (§9.6); null/empty = none.</summary>
+        public string ExecutionClass => _executionClass;
+
+        /// <summary>True if this effect runs a custom execution calculation.</summary>
+        public bool HasExecution => !string.IsNullOrEmpty(_executionClass);
+
+        /// <summary>Sets the execution class name (editor importer / authoring / tests).</summary>
+        public void SetExecutionClass(string executionClass) => _executionClass = executionClass;
 
         /// <summary>Populates the asset (used by the editor importer).</summary>
         public void Populate(
