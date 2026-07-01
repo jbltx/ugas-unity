@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Jbltx.Ugas.Cues;
 using Jbltx.Ugas.Definitions;
 using Jbltx.Ugas.Kernel;
 
@@ -34,6 +35,13 @@ namespace Jbltx.Ugas.Runtime
 
         /// <summary>Raised when an Instant effect executes or a periodic tick fires (effect, level).</summary>
         public event Action<GameplayEffectDefinition, int> OnEffectExecuted;
+
+        /// <summary>
+        /// Raised for each of an effect's <c>GameplayCue.*</c> tags (SPEC §12): Execute on an instant /
+        /// periodic execution (handle -1), Add when a durational effect activates, Remove when it ends
+        /// (handle = the active-effect handle). Carries tags only — never presentation assets.
+        /// </summary>
+        public event Action<string, CueNotifyType, int> OnCue;
 
         public GameplayEffectsSystem(IUgasRuntime runtime)
         {
@@ -133,6 +141,10 @@ namespace Jbltx.Ugas.Runtime
                 active.ExecutionCount++;
             }
 
+            // §12: a durational effect starts its looping cues on activation.
+            var addCues = effect.GameplayCues;
+            for (int i = 0; i < addCues.Count; i++) OnCue?.Invoke(addCues[i], CueNotifyType.Add, active.Handle);
+
             _runtime.RecalculateAttributes();
             return active;
         }
@@ -189,8 +201,14 @@ namespace Jbltx.Ugas.Runtime
             _active.RemoveAt(idx);
 
             var endedDef = active.Definition;
+            int endedHandle = active.Handle;
             var granted = endedDef.GrantedTags;
             for (int i = 0; i < granted.Count; i++) _runtime.RemoveGrantedTag(granted[i]);
+
+            // §12: stop the effect's looping cues as it ends (handle captured before the record is pooled).
+            var removeCues = endedDef.GameplayCues;
+            for (int i = 0; i < removeCues.Count; i++) OnCue?.Invoke(removeCues[i], CueNotifyType.Remove, endedHandle);
+
             Return(active);
 
             // RunInSequence: promote the next queued instance of this definition, if any.
@@ -242,6 +260,10 @@ namespace Jbltx.Ugas.Runtime
 
             _runtime.RecalculateAttributes();
             OnEffectExecuted?.Invoke(effect, level);
+
+            // §12: an instant execution or a periodic tick fires burst cues.
+            var cues = effect.GameplayCues;
+            for (int i = 0; i < cues.Count; i++) OnCue?.Invoke(cues[i], CueNotifyType.Execute, -1);
         }
 
         private ActiveGameplayEffect Rent()
