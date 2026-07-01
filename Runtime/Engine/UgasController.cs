@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Jbltx.Ugas.Cues;
 using Jbltx.Ugas.Definitions;
 using Jbltx.Ugas.Kernel;
+using Jbltx.Ugas.Prediction;
 using Jbltx.Ugas.Spatial;
 using Jbltx.Ugas.Tags;
 using UnityEngine;
@@ -259,6 +260,30 @@ namespace Jbltx.Ugas.Runtime
         /// <summary>Resolves an effect registered via <see cref="RegisterEffect"/>; null if unknown.</summary>
         public GameplayEffectDefinition ResolveEffect(string effectName)
             => _effectsByName != null && effectName != null && _effectsByName.TryGetValue(effectName, out var e) ? e : null;
+
+        private Dictionary<string, IExecutionCalculation> _executions;
+        private uint _executionSub;
+
+        /// <summary>
+        /// Base seed for this controller's deterministic execution RNG (§13.8.1). Set it for reproducible
+        /// prediction/tests; when 0 (the default) the process-local instance id is used.
+        /// </summary>
+        public ulong RandomSeed { get; set; }
+
+        /// <summary>Registers an execution calculation by the name effects reference via <c>ExecutionClass</c> (§9.6).</summary>
+        public void RegisterExecution(string name, IExecutionCalculation calculation)
+        {
+            if (string.IsNullOrEmpty(name) || calculation == null) return;
+            (_executions ??= new Dictionary<string, IExecutionCalculation>())[name] = calculation;
+        }
+
+        /// <summary>Resolves a registered execution calculation; null if unknown.</summary>
+        public IExecutionCalculation ResolveExecution(string name)
+            => _executions != null && name != null && _executions.TryGetValue(name, out var c) ? c : null;
+
+        /// <summary>A fresh deterministic RNG stream for the next execution — a disjoint sub-stream per §13.8.1.</summary>
+        public UgasRandom NextExecutionRandom()
+            => new UgasRandom(RandomSeed != 0 ? RandomSeed : (ulong)_instanceId, _executionSub++);
 
         // Resolves tag names to interned handles in this controller's registry; null when empty.
         private IReadOnlyList<GameplayTag> ResolveTags(List<string> names)

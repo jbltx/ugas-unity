@@ -256,7 +256,13 @@ namespace Jbltx.Ugas.Runtime
                 }
             }
 
-            // TODO: run custom Executions (calculation classes) here.
+            // §9.6: run the effect's custom execution calculation, if any, with source/target + a
+            // deterministic RNG stream, so stateful/branching math (mitigation, random rolls) applies.
+            if (effect.HasExecution && _runtime is UgasController target)
+            {
+                var calc = target.ResolveExecution(effect.ExecutionClass);
+                calc?.Execute(new ExecutionContext { Source = source, Target = target, Level = level, Rng = target.NextExecutionRandom() });
+            }
 
             _runtime.RecalculateAttributes();
             OnEffectExecuted?.Invoke(effect, level);
