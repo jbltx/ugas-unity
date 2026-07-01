@@ -73,6 +73,34 @@ namespace Jbltx.Ugas.Tests.Editor
         }
 
         [Test]
+        public void InstantEffect_SourceScaledMagnitude_UsesInstigatorNotTarget()
+        {
+            var attacker = NewController();
+            attacker.RegisterAttributeSet(new RuntimeAttributeSet(RpgSet()));
+            attacker.FindAttribute("WeaponDamage").BaseValue = 18f;
+            attacker.RecalculateAttributes();
+
+            var target = NewController();
+            target.RegisterAttributeSet(new RuntimeAttributeSet(RpgSet()));
+            target.FindAttribute("MaxHealth").BaseValue = 100f;
+            target.FindAttribute("Health").BaseValue = 100f;
+            target.FindAttribute("WeaponDamage").BaseValue = 5f; // deliberately different from the attacker
+            target.RecalculateAttributes();
+
+            var basicAttack = Effect("rpg_effect_basic_attack_damage.yaml.txt"); // Health -= Source.WeaponDamage (§9.4.2)
+
+            // Applied FROM the attacker: uses the attacker's WeaponDamage (18) → 100 - 18 = 82.
+            target.ApplyEffect(basicAttack, 1, attacker);
+            Assert.That(target.GetBaseValue("Health"), Is.EqualTo(82f).Within(1e-4f), "source-scaled by the instigator");
+
+            // Applied with no source: falls back to the target's own WeaponDamage (5) → 100 - 5 = 95.
+            target.FindAttribute("Health").BaseValue = 100f;
+            target.RecalculateAttributes();
+            target.ApplyEffect(basicAttack);
+            Assert.That(target.GetBaseValue("Health"), Is.EqualTo(95f).Within(1e-4f), "no source → resolves against self");
+        }
+
+        [Test]
         public void Clamp_ResolvesAttributeReference_HealthToMaxHealth()
         {
             var gc = NewController();

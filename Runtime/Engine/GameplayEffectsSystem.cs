@@ -46,13 +46,13 @@ namespace Jbltx.Ugas.Runtime
         /// Applies an effect. Instant effects mutate base values and return null; HasDuration /
         /// Infinite effects are tracked and the live (pooled) record is returned.
         /// </summary>
-        public ActiveGameplayEffect ApplyEffect(GameplayEffectDefinition effect, int level = 1, int instigatorId = -1)
+        public ActiveGameplayEffect ApplyEffect(GameplayEffectDefinition effect, int level = 1, int instigatorId = -1, IUgasRuntime source = null)
         {
             if (effect == null) throw new ArgumentNullException(nameof(effect));
 
             if (effect.DurationPolicy == DurationPolicy.Instant)
             {
-                Execute(effect, level);
+                Execute(effect, level, source);
                 return null;
             }
 
@@ -63,13 +63,14 @@ namespace Jbltx.Ugas.Runtime
                 switch (effect.ExecutionPolicy)
                 {
                     case ExecutionPolicy.RunInMerge:
-                        // Fold into the existing instance: add a stack and refresh its duration.
+                        // Fold into the existing instance: add a stack and refresh its duration + source.
                         existing.Stacks++;
+                        existing.Source = source;
                         if (existing.HasDuration)
-                            existing.RemainingDuration = _runtime.ResolveMagnitude(effect.Duration, level);
+                            existing.RemainingDuration = _runtime.ResolveMagnitude(effect.Duration, level, source);
                         if (existing.IsPeriodic && effect.Period.ExecuteOnApplication)
                         {
-                            Execute(effect, level);
+                            Execute(effect, level, source);
                             existing.ExecutionCount++;
                         }
                         _runtime.RecalculateAttributes();
@@ -77,7 +78,7 @@ namespace Jbltx.Ugas.Runtime
 
                     case ExecutionPolicy.RunInSequence:
                         // Queue behind the active instance; promoted when it ends (see RemoveAt).
-                        var queued = NewRecord(effect, level, instigatorId);
+                        var queued = NewRecord(effect, level, instigatorId, source);
                         _pending.Add(queued);
                         return queued;
 
@@ -85,7 +86,7 @@ namespace Jbltx.Ugas.Runtime
                 }
             }
 
-            return ActivateNew(effect, level, instigatorId);
+            return ActivateNew(effect, level, instigatorId, source);
         }
 
         private ActiveGameplayEffect FindActive(GameplayEffectDefinition effect)
@@ -96,17 +97,18 @@ namespace Jbltx.Ugas.Runtime
         }
 
         // Builds a pooled record without adding it to the active set.
-        private ActiveGameplayEffect NewRecord(GameplayEffectDefinition effect, int level, int instigatorId)
+        private ActiveGameplayEffect NewRecord(GameplayEffectDefinition effect, int level, int instigatorId, IUgasRuntime source)
         {
             var a = Rent();
             a.Handle = _nextHandle++;
             a.Definition = effect;
             a.Level = level;
             a.InstigatorId = instigatorId;
+            a.Source = source;
             if (effect.DurationPolicy == DurationPolicy.HasDuration)
             {
                 a.HasDuration = true;
-                a.RemainingDuration = _runtime.ResolveMagnitude(effect.Duration, level);
+                a.RemainingDuration = _runtime.ResolveMagnitude(effect.Duration, level, source);
             }
             else
             {
@@ -117,9 +119,9 @@ namespace Jbltx.Ugas.Runtime
         }
 
         // Adds a record to the active set: grants tags, fires an apply-time periodic tick, recalculates.
-        private ActiveGameplayEffect ActivateNew(GameplayEffectDefinition effect, int level, int instigatorId)
+        private ActiveGameplayEffect ActivateNew(GameplayEffectDefinition effect, int level, int instigatorId, IUgasRuntime source)
         {
-            var active = NewRecord(effect, level, instigatorId);
+            var active = NewRecord(effect, level, instigatorId, source);
             _active.Add(active);
 
             var granted = effect.GrantedTags;
@@ -127,7 +129,7 @@ namespace Jbltx.Ugas.Runtime
 
             if (active.IsPeriodic && effect.Period.ExecuteOnApplication)
             {
-                Execute(effect, level);
+                Execute(effect, level, source);
                 active.ExecutionCount++;
             }
 
@@ -165,7 +167,7 @@ namespace Jbltx.Ugas.Runtime
                     while (period > 0f && active.PeriodElapsed >= period - Epsilon)
                     {
                         active.PeriodElapsed -= period;
-                        Execute(active.Definition, active.Level);
+                        Execute(active.Definition, active.Level, active.Source);
                         active.ExecutionCount++;
                     }
                 }
@@ -203,7 +205,7 @@ namespace Jbltx.Ugas.Runtime
                     for (int i = 0; i < granted.Count; i++) _runtime.GrantTag(granted[i]);
                     if (next.IsPeriodic && endedDef.Period.ExecuteOnApplication)
                     {
-                        Execute(endedDef, next.Level);
+                        Execute(endedDef, next.Level, next.Source);
                         next.ExecutionCount++;
                     }
                 }
@@ -212,14 +214,15 @@ namespace Jbltx.Ugas.Runtime
             _runtime.RecalculateAttributes();
         }
 
-        // Applies an Instant effect's modifiers to base values, then fires side effects.
-        private void Execute(GameplayEffectDefinition effect, int level)
+        // Applies an Instant effect's modifiers to base values, then fires side effects. Source-scaled
+        // magnitudes (§9.4.2) resolve against the source/instigator when one is supplied.
+        private void Execute(GameplayEffectDefinition effect, int level, IUgasRuntime source)
         {
             var mods = effect.Modifiers;
             for (int i = 0; i < mods.Count; i++)
             {
                 var mod = mods[i];
-                float magnitude = _runtime.ResolveMagnitude(mod.Magnitude, level);
+                float magnitude = _runtime.ResolveMagnitude(mod.Magnitude, level, source);
                 switch (mod.Operation)
                 {
                     case ModifierOp.Add:

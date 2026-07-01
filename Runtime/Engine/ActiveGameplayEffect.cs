@@ -22,6 +22,9 @@ namespace Jbltx.Ugas.Runtime
         public int ExecutionCount;
         public int InstigatorId = -1;
 
+        /// <summary>The source/instigator, for resolving Source-scaled magnitudes (§9.4.2/§9.9). Null = self.</summary>
+        public IUgasRuntime Source;
+
         public bool IsInfinite => Definition != null && Definition.DurationPolicy == DurationPolicy.Infinite;
         public bool IsPeriodic => Definition != null && Definition.IsPeriodic;
 
@@ -37,6 +40,7 @@ namespace Jbltx.Ugas.Runtime
             PeriodElapsed = 0f;
             ExecutionCount = 0;
             InstigatorId = -1;
+            Source = null;
         }
     }
 }

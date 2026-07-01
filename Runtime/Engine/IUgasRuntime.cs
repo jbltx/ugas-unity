@@ -19,8 +19,12 @@ namespace Jbltx.Ugas.Runtime
         /// <summary>Applies a gameplay effect to this controller (e.g. an ability's cost/cooldown).</summary>
         ActiveGameplayEffect ApplyEffect(GameplayEffectDefinition effect, int level);
 
-        /// <summary>Resolves a magnitude definition to a concrete value for this controller.</summary>
-        float ResolveMagnitude(in MagnitudeDefinition magnitude, int level);
+        /// <summary>
+        /// Resolves a magnitude definition to a concrete value. AttributeBased magnitudes read this
+        /// controller's attributes unless <paramref name="source"/> is given and the magnitude's
+        /// <c>Source</c> is <c>Source</c> (§9.4.2), in which case they read the source/instigator.
+        /// </summary>
+        float ResolveMagnitude(in MagnitudeDefinition magnitude, int level, IUgasRuntime source = null);
 
         /// <summary>Adds <paramref name="delta"/> to the named attribute's base value (Instant effects).</summary>
         void AddToBaseValue(string attributeName, float delta);
