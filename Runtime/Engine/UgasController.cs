@@ -223,6 +223,28 @@ namespace Jbltx.Ugas.Runtime
             return targets;
         }
 
+        // ---- Spatial binding + effect registry (for ability tasks, §10/§17) ----
+
+        /// <summary>
+        /// The spatial index this controller queries for area/perception gameplay (§17.2). Set by the
+        /// engine binding (e.g. from a <see cref="Jbltx.Ugas.Spatial.UgasSpatialWorld"/>); ability tasks
+        /// that resolve actors in a radius read it from their instigator.
+        /// </summary>
+        public ISpatialQueryProvider SpatialProvider { get; set; }
+
+        private Dictionary<string, GameplayEffectDefinition> _effectsByName;
+
+        /// <summary>Registers an effect by its <see cref="GameplayEffectDefinition.EffectName"/> so tasks can resolve it by name (§10).</summary>
+        public void RegisterEffect(GameplayEffectDefinition effect)
+        {
+            if (effect == null || string.IsNullOrEmpty(effect.EffectName)) return;
+            (_effectsByName ??= new Dictionary<string, GameplayEffectDefinition>())[effect.EffectName] = effect;
+        }
+
+        /// <summary>Resolves an effect registered via <see cref="RegisterEffect"/>; null if unknown.</summary>
+        public GameplayEffectDefinition ResolveEffect(string effectName)
+            => _effectsByName != null && effectName != null && _effectsByName.TryGetValue(effectName, out var e) ? e : null;
+
         // Resolves tag names to interned handles in this controller's registry; null when empty.
         private IReadOnlyList<GameplayTag> ResolveTags(List<string> names)
         {

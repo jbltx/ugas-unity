@@ -152,10 +152,14 @@ namespace Jbltx.Ugas.Runtime
         /// <summary>Called on entering Active: instantiates and activates the ability's tasks (§10).</summary>
         protected virtual void OnActivate(IUgasRuntime runtime)
         {
+            // Spatial tasks (§10.3/§17.3) need the instigator + its spatial provider; other tasks ignore it.
+            var instigator = runtime as UgasController;
+            var ctx = new AbilityTaskContext(instigator, instigator != null ? instigator.SpatialProvider : null, Level);
+
             var tasks = Definition.Tasks;
             for (int i = 0; i < tasks.Count; i++)
             {
-                var task = AbilityTaskFactory.Create(tasks[i]);
+                var task = AbilityTaskFactory.Create(tasks[i], ctx);
                 task.Activate();
                 _runningTasks.Add(task);
             }
