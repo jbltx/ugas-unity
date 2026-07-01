@@ -33,6 +33,13 @@ namespace Jbltx.Ugas.Spatial
         /// </summary>
         IReadOnlyList<UgasController> OverlapSphere(Vector3 center, float radius, in SpatialFilter filter);
 
+        /// <summary>
+        /// Registered controllers within a cone from <paramref name="origin"/> along
+        /// <paramref name="direction"/> — inside <paramref name="radius"/> and within
+        /// <paramref name="halfAngleDeg"/> of the axis — matching <paramref name="filter"/>, nearest-first.
+        /// </summary>
+        IReadOnlyList<UgasController> OverlapCone(Vector3 origin, Vector3 direction, float radius, float halfAngleDeg, in SpatialFilter filter);
+
         /// <summary>The <paramref name="count"/> nearest matching controllers to <paramref name="center"/>, nearest-first.</summary>
         IReadOnlyList<UgasController> Nearest(Vector3 center, int count, in SpatialFilter filter);
     }
