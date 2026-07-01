@@ -162,6 +162,34 @@ namespace Jbltx.Ugas.Runtime
         }
 
         /// <summary>
+        /// Re-applies a persisted active effect (SPEC §14.4 step 2) with resumed timers: the record is
+        /// added with its saved RemainingDuration / PeriodElapsed / ExecutionCount / Stacks and its tags
+        /// re-granted, then attributes recompute. It does NOT fire ExecuteOnApplication or re-execute the
+        /// current period (§14.3.3 rule 2) — the effect resumes exactly where it was captured.
+        /// </summary>
+        public void RestoreActive(GameplayEffectDefinition effect, int level, bool hasDuration,
+            float remainingDuration, float periodElapsed, int executionCount, int stacks)
+        {
+            if (effect == null) return;
+
+            var a = Rent();
+            a.Handle = _nextHandle++;
+            a.Definition = effect;
+            a.Level = level;
+            a.HasDuration = hasDuration;
+            a.RemainingDuration = hasDuration ? remainingDuration : -1f;
+            a.PeriodElapsed = periodElapsed;
+            a.ExecutionCount = executionCount;
+            a.Stacks = stacks < 1 ? 1 : stacks;
+            _active.Add(a);
+
+            var granted = effect.GrantedTags;
+            for (int i = 0; i < granted.Count; i++) _runtime.GrantTag(granted[i]);
+
+            _runtime.RecalculateAttributes();
+        }
+
+        /// <summary>
         /// Advances all active effects by <paramref name="deltaSeconds"/>: ticks periodic executions
         /// and expires HasDuration effects whose remaining duration reaches zero.
         /// </summary>

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Jbltx.Ugas.Cues;
 using Jbltx.Ugas.Definitions;
 using Jbltx.Ugas.Kernel;
+using Jbltx.Ugas.Persistence;
 using Jbltx.Ugas.Prediction;
 using Jbltx.Ugas.Spatial;
 using Jbltx.Ugas.Tags;
@@ -305,6 +306,80 @@ namespace Jbltx.Ugas.Runtime
             EnsureInitialized();
             _effects.Tick(deltaSeconds);
             foreach (var ability in _abilities.Values) ability.TickTasks(deltaSeconds);
+        }
+
+        // ---- Persistence (§14) ----
+
+        /// <summary>
+        /// Captures this controller's persistable state (SPEC §14.2): attribute base values, active
+        /// (non-Instant) effects with their resumable timers, and directly-granted abilities. Current
+        /// values and owned tags are derived and are NOT captured as authoritative state.
+        /// </summary>
+        public GCSnapshot CaptureSnapshot()
+        {
+            EnsureInitialized();
+            var snapshot = new GCSnapshot { OwnerActorId = name };
+
+            foreach (var set in _sets.Values)
+                foreach (var attr in set.Attributes)
+                    snapshot.Attributes.Add(new AttributeState { Set = set.Name, Name = attr.Name, BaseValue = attr.BaseValue });
+
+            var active = _effects.ActiveEffects;
+            for (int i = 0; i < active.Count; i++)
+            {
+                var ae = active[i];
+                snapshot.ActiveEffects.Add(new ActiveEffectRecord
+                {
+                    Effect = ae.Definition,
+                    Level = ae.Level,
+                    HasDuration = ae.HasDuration,
+                    RemainingDuration = ae.RemainingDuration,
+                    PeriodElapsed = ae.PeriodElapsed,
+                    ExecutionCount = ae.ExecutionCount,
+                    Stacks = ae.Stacks,
+                });
+            }
+
+            foreach (var ability in _abilities.Values)
+                snapshot.GrantedAbilities.Add(new AbilityGrant { Ability = ability.Definition, Level = ability.Level });
+
+            return snapshot;
+        }
+
+        /// <summary>
+        /// Restores state from a snapshot (SPEC §14.4): base values first, then active effects with
+        /// resumed timers, then non-effect abilities, then a single recompute — so current values and
+        /// owned tags are rederived. Restore onto a controller with the same attribute sets registered.
+        /// </summary>
+        public void RestoreSnapshot(GCSnapshot snapshot)
+        {
+            if (snapshot == null) return;
+            EnsureInitialized();
+
+            // 1. Base values (raw — recomputed at step 4; §14.4 step 1).
+            for (int i = 0; i < snapshot.Attributes.Count; i++)
+            {
+                var a = snapshot.Attributes[i];
+                var attr = FindAttribute(a.Name);
+                if (attr != null) attr.BaseValue = a.BaseValue;
+            }
+
+            // 2. Re-apply active effects with resumed timers (§14.4 step 2).
+            for (int i = 0; i < snapshot.ActiveEffects.Count; i++)
+            {
+                var r = snapshot.ActiveEffects[i];
+                _effects.RestoreActive(r.Effect, r.Level, r.HasDuration, r.RemainingDuration, r.PeriodElapsed, r.ExecutionCount, r.Stacks);
+            }
+
+            // 3. Re-grant abilities not already present (effect-granted ones come back via step 2).
+            for (int i = 0; i < snapshot.GrantedAbilities.Count; i++)
+            {
+                var g = snapshot.GrantedAbilities[i];
+                if (g.Ability != null && GetAbility(g.Ability.AbilityName) == null) GrantAbility(g.Ability, g.Level);
+            }
+
+            // 4. Recompute derived state (§14.4 step 4).
+            RecalculateAttributes();
         }
 
         // ---- IUgasRuntime ----
