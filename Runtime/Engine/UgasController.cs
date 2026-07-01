@@ -199,6 +199,21 @@ namespace Jbltx.Ugas.Runtime
         }
 
         /// <summary>
+        /// Removes the first active effect whose definition name matches (§10.3 RemoveEffectFromOwner
+        /// payload). Returns false if no such effect is active.
+        /// </summary>
+        public bool RemoveEffectByName(string effectName)
+        {
+            EnsureInitialized();
+            if (string.IsNullOrEmpty(effectName)) return false;
+            var active = _effects.ActiveEffects;
+            for (int i = 0; i < active.Count; i++)
+                if (active[i].Definition != null && active[i].Definition.EffectName == effectName)
+                    return _effects.RemoveEffect(active[i].Handle);
+            return false;
+        }
+
+        /// <summary>
         /// Applies <paramref name="effect"/> over an area (SPEC §17.3): resolves the target set with a
         /// single §17.2 query about <paramref name="origin"/> at call time (a snapshot), then applies
         /// the effect to each matched controller — each honoring its own §9.6 execution policy exactly
