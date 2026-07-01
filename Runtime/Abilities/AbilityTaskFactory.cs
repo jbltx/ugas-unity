@@ -40,7 +40,17 @@ namespace Jbltx.Ugas.Abilities
             switch (def.Type)
             {
                 case "WaitDelay":
-                    return new WaitDelayTask(GetFloat(def.Params, "Seconds", 0f), def.TickInterval, def.Priority);
+                    // Genre packs author the wait as `Duration`; older data uses `Seconds`. Accept both.
+                    return new WaitDelayTask(GetFloat(def.Params, "Duration", GetFloat(def.Params, "Seconds", 0f)), def.TickInterval, def.Priority);
+                case "ApplyEffectToOwner":
+                    return new ApplyEffectToOwnerTask(
+                        ctx.Instigator,
+                        ctx.Instigator != null ? ctx.Instigator.ResolveEffect(GetString(def.Params, "EffectClass", null)) : null,
+                        ctx.Level,
+                        def.TickInterval,
+                        def.Priority);
+                case "RemoveEffectFromOwner":
+                    return new RemoveEffectFromOwnerTask(ctx.Instigator, GetString(def.Params, "EffectClass", null), def.TickInterval, def.Priority);
                 case "ApplyEffectToActorsInRadius":
                     return new ApplyEffectInRadiusTask(
                         ctx.Instigator,
