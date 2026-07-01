@@ -24,6 +24,14 @@ namespace Jbltx.Ugas.Spatial
         /// <summary>Removes a controller from the spatial index.</summary>
         void Unregister(UgasController gc);
 
+        /// <summary>
+        /// Refreshes the index from anchors' current positions, on the ambient §10.6 cadence (typically
+        /// once per <see cref="UgasSpatialWorld.Tick"/>). An index-based provider (e.g. a grid) re-buckets
+        /// here; a provider that reads positions live at query time no-ops. Queries between refreshes may
+        /// see positions as of the last refresh (§17.6 bounded staleness).
+        /// </summary>
+        void Rebuild();
+
         /// <summary>Straight-line distance between two world points, in engine units.</summary>
         float Distance(Vector3 a, Vector3 b);
 

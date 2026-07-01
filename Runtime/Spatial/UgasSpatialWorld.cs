@@ -73,6 +73,7 @@ namespace Jbltx.Ugas.Spatial
         /// </summary>
         public void Tick()
         {
+            _provider.Rebuild(); // refresh the spatial index from current positions (§17.6); no-op for live providers
             for (int i = 0; i < _regions.Count; i++) _regions[i].Evaluate(_provider);
             for (int i = 0; i < _perceptions.Count; i++) _perceptions[i].Evaluate(_provider);
         }
