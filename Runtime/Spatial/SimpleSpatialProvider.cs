@@ -56,14 +56,21 @@ namespace Jbltx.Ugas.Spatial
 
         public IReadOnlyList<UgasController> OverlapSphere(Vector3 center, float radius, in SpatialFilter filter)
         {
-            float sqrRadius = radius * radius;
-            Gather(center, sqrRadius, filter);
+            Gather(center, radius * radius, false, default, 0f, filter);
+            return _results;
+        }
+
+        public IReadOnlyList<UgasController> OverlapCone(Vector3 origin, Vector3 direction, float radius, float halfAngleDeg, in SpatialFilter filter)
+        {
+            Vector3 dir = direction.sqrMagnitude > 1e-8f ? direction.normalized : Vector3.forward;
+            float cosHalfAngle = Mathf.Cos(Mathf.Clamp(halfAngleDeg, 0f, 180f) * Mathf.Deg2Rad);
+            Gather(origin, radius * radius, true, dir, cosHalfAngle, filter);
             return _results;
         }
 
         public IReadOnlyList<UgasController> Nearest(Vector3 center, int count, in SpatialFilter filter)
         {
-            Gather(center, float.PositiveInfinity, filter);
+            Gather(center, float.PositiveInfinity, false, default, 0f, filter);
             int cap = count > 0 ? count : _results.Count;
             if (_results.Count > cap) _results.RemoveRange(cap, _results.Count - cap);
             return _results;
@@ -71,7 +78,10 @@ namespace Jbltx.Ugas.Spatial
 
         // Collects controllers within sqrRadius of center that pass the filter, ordered nearest-first
         // (tie-break by registration order), into the reused _results list. MaxResults is applied last.
-        private void Gather(Vector3 center, float sqrRadius, in SpatialFilter filter)
+        // When cone is true, candidates are additionally clipped to the half-angle about coneDir
+        // (a normalized direction): a point is inside when dot(offset, coneDir) >= cos(half) * |offset|,
+        // which avoids normalizing each offset. The apex point (offset ~ 0) is always inside.
+        private void Gather(Vector3 center, float sqrRadius, bool cone, Vector3 coneDir, float cosHalfAngle, in SpatialFilter filter)
         {
             _scratch.Clear();
             _results.Clear();
@@ -81,8 +91,10 @@ namespace Jbltx.Ugas.Spatial
                 var gc = _anchors[i];
                 if (gc == null) continue;
 
-                float sqrDistance = (gc.transform.position - center).sqrMagnitude;
+                Vector3 offset = gc.transform.position - center;
+                float sqrDistance = offset.sqrMagnitude;
                 if (sqrDistance > sqrRadius) continue;
+                if (cone && sqrDistance > 1e-8f && Vector3.Dot(offset, coneDir) < cosHalfAngle * Mathf.Sqrt(sqrDistance)) continue;
                 if (!Passes(gc, filter)) continue;
 
                 _scratch.Add(new Candidate(gc, sqrDistance, i));

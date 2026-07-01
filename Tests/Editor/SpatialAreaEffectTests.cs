@@ -130,5 +130,26 @@ namespace Jbltx.Ugas.Tests.Editor
             Assert.That(near.GetBaseValue("Health"), Is.EqualTo(90f).Within(1e-4f));
             Assert.That(far.GetBaseValue("Health"), Is.EqualTo(100f).Within(1e-4f));
         }
+
+        [Test]
+        public void ApplyAreaEffect_Cone_HitsWithinCasterFacing()
+        {
+            var caster = Combatant("Caster", Vector3.zero); // faces +Z by default
+            var front = Combatant("Front", new Vector3(0, 0, 5)); // straight ahead
+            var side = Combatant("Side", new Vector3(5, 0, 0));    // 90° to the side
+
+            var provider = new SimpleSpatialProvider();
+            provider.Register(front);
+            provider.Register(side);
+
+            var effect = AoeHealthDelta(-20f, MagnitudeDefinition.Scalable(10f));
+            effect.SetArea(new AreaDefinition { Enabled = true, Shape = AreaShape.Cone, Radius = MagnitudeDefinition.Scalable(10f), HalfAngleDeg = 45f });
+
+            var affected = caster.ApplyAreaEffect(effect, Vector3.zero, provider);
+
+            Assert.That(Names(affected), Is.EqualTo(new[] { "Front" }));
+            Assert.That(front.GetBaseValue("Health"), Is.EqualTo(80f).Within(1e-4f));
+            Assert.That(side.GetBaseValue("Health"), Is.EqualTo(100f).Within(1e-4f)); // outside the cone
+        }
     }
 }

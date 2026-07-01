@@ -179,7 +179,7 @@ namespace Jbltx.Ugas.Runtime
         /// <see cref="ResolveMagnitude"/> against THIS controller (the instigator), so an AttributeBased
         /// radius scales with the caster's stat (§17.3). Tag filters resolve against this controller's
         /// registry, which is correct when the world shares one registry (the norm). A Cone area is
-        /// currently resolved as a Sphere of the same radius until the provider gains <c>OverlapCone</c>.
+        /// swept about this controller's facing (<c>transform.forward</c>) via <c>OverlapCone</c>.
         /// </remarks>
         public IReadOnlyList<UgasController> ApplyAreaEffect(
             GameplayEffectDefinition effect, Vector3 origin, ISpatialQueryProvider provider, int level = 1)
@@ -197,10 +197,9 @@ namespace Jbltx.Ugas.Runtime
                 MaxResults = area.MaxTargets,
             };
 
-            if (area.Shape == AreaShape.Cone)
-                Debug.LogWarning($"[UGAS] Effect '{effect.EffectName}' declares a Cone area; the reference provider resolves it as a Sphere until OverlapCone lands.");
-
-            var hits = provider.OverlapSphere(origin, radius, filter);
+            var hits = area.Shape == AreaShape.Cone
+                ? provider.OverlapCone(origin, transform.forward, radius, area.HalfAngleDeg, filter)
+                : provider.OverlapSphere(origin, radius, filter);
             // §17.3 rule 1: snapshot the set before applying — the provider reuses its result buffer,
             // and applying effects must not observe a set mutated mid-iteration.
             var targets = new List<UgasController>(hits);

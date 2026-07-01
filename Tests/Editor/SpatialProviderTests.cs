@@ -108,5 +108,24 @@ namespace Jbltx.Ugas.Tests.Editor
             var hits = provider.OverlapSphere(Vector3.zero, 100f, new SpatialFilter { ExcludeTags = new[] { enemy } });
             Assert.That(Names(hits), Is.EqualTo(new[] { "A", "C" }));
         }
+
+        [Test]
+        public void OverlapCone_ClipsByAngleAndRadius()
+        {
+            var onAxis = Anchor("OnAxis", new Vector3(5, 0, 0));  // dead ahead
+            var offAxis = Anchor("OffAxis", new Vector3(0, 5, 0)); // 90° to the side
+            var behind = Anchor("Behind", new Vector3(-5, 0, 0));  // opposite direction
+            var tooFar = Anchor("TooFar", new Vector3(20, 0, 0));  // on axis but out of range
+
+            var provider = new SimpleSpatialProvider();
+            provider.Register(onAxis);
+            provider.Register(offAxis);
+            provider.Register(behind);
+            provider.Register(tooFar);
+
+            // Cone from origin along +X, radius 10, half-angle 45°.
+            var hits = provider.OverlapCone(Vector3.zero, Vector3.right, 10f, 45f, SpatialFilter.None);
+            Assert.That(Names(hits), Is.EqualTo(new[] { "OnAxis" }));
+        }
     }
 }
