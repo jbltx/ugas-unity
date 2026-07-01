@@ -52,6 +52,9 @@ namespace Jbltx.Ugas.Spatial
             _anchors.Remove(gc);
         }
 
+        /// <summary>No-op: this provider reads positions live at query time, so there is no index to refresh.</summary>
+        public void Rebuild() { }
+
         public float Distance(Vector3 a, Vector3 b) => Vector3.Distance(a, b);
 
         public IReadOnlyList<UgasController> OverlapSphere(Vector3 center, float radius, in SpatialFilter filter)
