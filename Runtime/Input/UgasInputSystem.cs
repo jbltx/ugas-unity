@@ -4,6 +4,20 @@ using Jbltx.Ugas.Definitions;
 
 namespace Jbltx.Ugas.Input
 {
+    /// <summary>Input buffering configuration (SPEC §11.7).</summary>
+    [System.Serializable]
+    public struct InputBufferConfig
+    {
+        /// <summary>Enable buffering of inputs that couldn't activate yet.</summary>
+        public bool Enabled;
+
+        /// <summary>Seconds a buffered input stays retryable before it is discarded.</summary>
+        public float BufferWindow;
+
+        /// <summary>Max buffered inputs; 0 = unbounded. When full, the oldest is dropped.</summary>
+        public int MaxBufferSize;
+    }
+
     /// <summary>
     /// The top of the §11 input stack: each <see cref="Update"/> it resolves every binding against the
     /// input source (device → value through the §11.6 modifier pipeline, §11.5), aggregates the strongest
@@ -19,6 +33,10 @@ namespace Jbltx.Ugas.Input
         private readonly Dictionary<string, InputTriggerBehavior> _behaviors = new Dictionary<string, InputTriggerBehavior>();
         private readonly Dictionary<string, TriggerBehaviorState> _states = new Dictionary<string, TriggerBehaviorState>();
         private readonly Dictionary<string, float> _actionValues = new Dictionary<string, float>();
+        private readonly List<(string action, float time)> _buffer = new List<(string action, float time)>();
+
+        /// <summary>Input buffering (§11.7); disabled by default. A fired action that can't activate is queued and retried.</summary>
+        public InputBufferConfig Buffering;
 
         /// <summary>Max seconds between press and release for an OnTap (§11.2).</summary>
         public float TapThreshold = 0.2f;
@@ -49,6 +67,10 @@ namespace Jbltx.Ugas.Input
         /// </summary>
         public void Update(float time)
         {
+            // Retry buffered inputs first (§11.7): drop expired, replay the rest — a press made while
+            // blocked activates as soon as the block clears, within the window.
+            if (Buffering.Enabled) DrainBuffer(time);
+
             // Aggregate the strongest resolved value per action this frame (multiple bindings may map one action).
             _actionValues.Clear();
             for (int i = 0; i < _bindings.Count; i++)
@@ -63,9 +85,26 @@ namespace Jbltx.Ugas.Input
             foreach (var pair in _actionValues)
             {
                 var behavior = _behaviors.TryGetValue(pair.Key, out var b) ? b : InputTriggerBehavior.OnPressed;
-                if (GetState(pair.Key).Evaluate(pair.Value, time, behavior, TapThreshold, DoubleTapWindow))
-                    _router.SendInput(pair.Key);
+                if (!GetState(pair.Key).Evaluate(pair.Value, time, behavior, TapThreshold, DoubleTapWindow)) continue;
+                if (!_router.SendInput(pair.Key) && Buffering.Enabled) Enqueue(pair.Key, time);
             }
+        }
+
+        // Discards expired buffered inputs, then retries the rest oldest-first, removing the first that
+        // activates (§11.7). Unexpired-but-still-blocked inputs remain for the next update.
+        private void DrainBuffer(float now)
+        {
+            for (int i = _buffer.Count - 1; i >= 0; i--)
+                if (now - _buffer[i].time > Buffering.BufferWindow) _buffer.RemoveAt(i);
+
+            for (int i = 0; i < _buffer.Count; i++)
+                if (_router.SendInput(_buffer[i].action)) { _buffer.RemoveAt(i); break; }
+        }
+
+        private void Enqueue(string action, float time)
+        {
+            if (Buffering.MaxBufferSize > 0 && _buffer.Count >= Buffering.MaxBufferSize) _buffer.RemoveAt(0);
+            _buffer.Add((action, time));
         }
 
         private TriggerBehaviorState GetState(string action)
