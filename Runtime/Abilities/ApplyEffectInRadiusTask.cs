@@ -57,9 +57,10 @@ namespace Jbltx.Ugas.Abilities
                 }
 
                 var hits = _provider.OverlapSphere(_instigator.transform.position, _radius, filter);
-                // Snapshot before applying (§17.3 rule 1): the provider reuses its result buffer.
+                // Snapshot before applying (§17.3 rule 1): the provider reuses its result buffer. The
+                // instigator is the source, so Source-scaled damage resolves against it (§9.4.2).
                 var targets = new List<UgasController>(hits);
-                for (int i = 0; i < targets.Count; i++) targets[i].ApplyEffect(_effect, _level);
+                for (int i = 0; i < targets.Count; i++) targets[i].ApplyEffect(_effect, _level, _instigator);
                 LastAffected = targets;
             }
 

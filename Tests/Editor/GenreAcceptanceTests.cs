@@ -39,6 +39,15 @@ namespace Jbltx.Ugas.Tests.Editor
             return so;
         }
 
+        private GameplayEffectDefinition Effect(string file)
+        {
+            var so = ScriptableObject.CreateInstance<GameplayEffectDefinition>();
+            _spawned.Add(so);
+            SpecEntityMapper.PopulateEffect(so,
+                (Jbltx.Ugas.Editor.Yaml.YamlMapping)Jbltx.Ugas.Editor.Yaml.YamlParser.Parse(SpecData.Read(file)));
+            return so;
+        }
+
         private UgasController Combatant(string name, Vector3 pos, float maxHealth = 100f)
         {
             var go = new GameObject(name);
@@ -237,13 +246,11 @@ namespace Jbltx.Ugas.Tests.Editor
         {
             var barbarian = Combatant("Barbarian", Vector3.zero);
 
-            // The whirlwind's hit effect — the task supplies the radius + ignore-tag, so this is plain damage.
-            var hit = ScriptableObject.CreateInstance<GameplayEffectDefinition>();
-            _spawned.Add(hit);
-            hit.Populate("GE_WhirlwindHit", DurationPolicy.Instant, default, default, ExecutionPolicy.RunInParallel, 0,
-                new List<ModifierDefinition> { new ModifierDefinition { Attribute = "Health", Operation = ModifierOp.Add, Magnitude = MagnitudeDefinition.Scalable(-18f) } },
-                null, null, null);
-            barbarian.RegisterEffect(hit);
+            // The authored source-scaled hit: Health -= the ATTACKER's WeaponDamage (§9.4.2), not the target's.
+            var basicAttack = Effect("rpg_effect_basic_attack_damage.yaml.txt");
+            barbarian.RegisterEffect(basicAttack);
+            barbarian.FindAttribute("WeaponDamage").BaseValue = 18f;
+            barbarian.RecalculateAttributes();
 
             var world = new UgasSpatialWorld();
             barbarian.SpatialProvider = world.Provider; // engine binding hands the instigator its provider
@@ -253,6 +260,10 @@ namespace Jbltx.Ugas.Tests.Editor
             var golem = Combatant("Golem", new Vector3(2, 0, 0));
             golem.GrantTag("Immunity.Physical");
             var straggler = Combatant("Straggler", new Vector3(20, 0, 0));
+            // Give the goblins their own WeaponDamage (5) so the result proves source-scaling: with the
+            // attacker's 18 they land on 82, not the 95 the target's own 5 would produce.
+            goblinA.FindAttribute("WeaponDamage").BaseValue = 5f; goblinA.RecalculateAttributes();
+            goblinB.FindAttribute("WeaponDamage").BaseValue = 5f; goblinB.RecalculateAttributes();
             world.Register(goblinA);
             world.Register(goblinB);
             world.Register(golem);
@@ -269,7 +280,7 @@ namespace Jbltx.Ugas.Tests.Editor
                     Params = new List<TaskParam>
                     {
                         new TaskParam { Key = "Radius", Value = "5" },
-                        new TaskParam { Key = "EffectClass", Value = "GE_WhirlwindHit" },
+                        new TaskParam { Key = "EffectClass", Value = "GE_BasicAttackDamage" },
                         new TaskParam { Key = "IgnoreTargetsWithTag", Value = "Immunity.Physical" },
                     },
                 },

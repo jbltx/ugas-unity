@@ -156,10 +156,18 @@ namespace Jbltx.Ugas.Runtime
         // ---- Effects ----
 
         public ActiveGameplayEffect ApplyEffect(GameplayEffectDefinition effect, int level = 1)
+            => ApplyEffect(effect, level, null);
+
+        /// <summary>
+        /// Applies an effect from a given <paramref name="source"/> (the instigator), so Source-scaled
+        /// magnitudes (§9.4.2) resolve against it — e.g. damage scaled by the attacker's WeaponDamage.
+        /// A null source resolves everything against this controller.
+        /// </summary>
+        public ActiveGameplayEffect ApplyEffect(GameplayEffectDefinition effect, int level, IUgasRuntime source)
         {
             EnsureInitialized();
             if (!MeetsApplicationRequirements(effect)) return null; // §9 ApplicationRequiredTags gate
-            return _effects.ApplyEffect(effect, level, _instanceId);
+            return _effects.ApplyEffect(effect, level, _instanceId, source);
         }
 
         // §9: an effect applies only while the owner currently owns every ApplicationRequiredTag
@@ -217,9 +225,11 @@ namespace Jbltx.Ugas.Runtime
                 ? provider.OverlapCone(origin, transform.forward, radius, area.HalfAngleDeg, filter)
                 : provider.OverlapSphere(origin, radius, filter);
             // §17.3 rule 1: snapshot the set before applying — the provider reuses its result buffer,
-            // and applying effects must not observe a set mutated mid-iteration.
+            // and applying effects must not observe a set mutated mid-iteration. This controller is the
+            // source, so Source-scaled magnitudes (e.g. damage from the caster's WeaponDamage) resolve
+            // against it, not the target (§9.4.2).
             var targets = new List<UgasController>(hits);
-            for (int i = 0; i < targets.Count; i++) targets[i].ApplyEffect(effect, level);
+            for (int i = 0; i < targets.Count; i++) targets[i].ApplyEffect(effect, level, this);
             return targets;
         }
 
@@ -269,7 +279,7 @@ namespace Jbltx.Ugas.Runtime
 
         // ---- IUgasRuntime ----
 
-        public float ResolveMagnitude(in MagnitudeDefinition magnitude, int level)
+        public float ResolveMagnitude(in MagnitudeDefinition magnitude, int level, IUgasRuntime source = null)
         {
             switch (magnitude.Type)
             {
@@ -278,8 +288,10 @@ namespace Jbltx.Ugas.Runtime
 
                 case MagnitudeType.AttributeBased:
                 {
-                    var backing = FindAttribute(magnitude.BackingAttribute);
-                    float baseVal = backing?.CurrentValue ?? 0f;
+                    // Source-scaled magnitudes (§9.4.2) read the instigator; otherwise this controller.
+                    float baseVal = (source != null && magnitude.Source == MagnitudeSource.Source)
+                        ? source.GetCurrentValue(magnitude.BackingAttribute)
+                        : (FindAttribute(magnitude.BackingAttribute)?.CurrentValue ?? 0f);
                     float coeff = magnitude.Coefficient == 0f ? 1f : magnitude.Coefficient;
                     return (baseVal + magnitude.PreMultiplyAdditive) * coeff + magnitude.PostMultiplyAdditive;
                 }
@@ -375,7 +387,7 @@ namespace Jbltx.Ugas.Runtime
                     var mod = mods[m];
                     if (mod.Attribute != attributeName) continue;
 
-                    float magnitude = ResolveMagnitude(mod.Magnitude, rec.Level);
+                    float magnitude = ResolveMagnitude(mod.Magnitude, rec.Level, rec.Source);
                     int channelId = _channels.GetOrAdd(mod.Channel);
 
                     for (int s = 0; s < rec.Stacks; s++)
