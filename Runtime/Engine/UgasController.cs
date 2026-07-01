@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Jbltx.Ugas.Cues;
 using Jbltx.Ugas.Definitions;
 using Jbltx.Ugas.Kernel;
 using Jbltx.Ugas.Spatial;
@@ -50,6 +51,9 @@ namespace Jbltx.Ugas.Runtime
         private float[] _channelScratch = System.Array.Empty<float>();
 
         public GameplayTagContainer OwnedTags => _ownedTags;
+
+        /// <summary>Fires for each GameplayCue notification this controller raises (SPEC §12); presentation subscribes.</summary>
+        public event Action<GameplayCueEvent> OnGameplayCue;
         public GameplayEffectsSystem Effects => _effects;
         public IReadOnlyDictionary<string, RuntimeAttributeSet> AttributeSets => _sets;
         public GameplayTagRegistryRuntime TagRegistry => _tagRegistry;
@@ -74,6 +78,7 @@ namespace Jbltx.Ugas.Runtime
                 : new GameplayTagRegistryRuntime();
             _ownedTags = new GameplayTagContainer(_tagRegistry);
             _effects = new GameplayEffectsSystem(this);
+            _effects.OnCue += (tag, type, handle) => OnGameplayCue?.Invoke(new GameplayCueEvent(tag, type, this, handle));
         }
 
         private void Update()
