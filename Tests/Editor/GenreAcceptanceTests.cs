@@ -290,10 +290,81 @@ namespace Jbltx.Ugas.Tests.Editor
             Assert.That(barbarian.TryActivateAbility("GA_Whirlwind"), Is.True, "no cost/cooldown/requirement → activates");
             barbarian.Tick(0.016f); // ticks the ability's tasks → the AoE fires
 
-            Assert.That(goblinA.GetBaseValue("Health"), Is.EqualTo(82f).Within(1e-4f));
+            Assert.That(goblinA.GetBaseValue("Health"), Is.EqualTo(82f).Within(1e-4f), "source-scaled by the attacker's WeaponDamage (18), not the goblin's own 5");
             Assert.That(goblinB.GetBaseValue("Health"), Is.EqualTo(82f).Within(1e-4f));
             Assert.That(golem.GetBaseValue("Health"), Is.EqualTo(100f).Within(1e-4f), "physically immune → spared");
             Assert.That(straggler.GetBaseValue("Health"), Is.EqualTo(100f).Within(1e-4f), "out of range → spared");
+        }
+
+        /// <summary>
+        /// Tower-defense signature: a stationary tower auto-targets the NEAREST creep within its range
+        /// and fires a single shot — distinct from the ARPG cleave that hits everything in radius.
+        /// Exercises §17.2 nearest-first ordering + range as the targeting gate + single-target application.
+        /// </summary>
+        [Test]
+        public void TowerDefense_Tower_ShootsNearestCreepInRange()
+        {
+            var towerGo = new GameObject("Tower");
+            _spawned.Add(towerGo);
+            towerGo.transform.position = Vector3.zero;
+            var tower = towerGo.AddComponent<UgasController>();
+
+            var creepA = Combatant("CreepA", new Vector3(2, 0, 0)); // nearest, in range
+            var creepB = Combatant("CreepB", new Vector3(4, 0, 0)); // in range, farther
+            var creepC = Combatant("CreepC", new Vector3(8, 0, 0)); // out of range
+
+            var world = new UgasSpatialWorld();
+            world.Register(creepA);
+            world.Register(creepB);
+            world.Register(creepC);
+
+            var shot = ScriptableObject.CreateInstance<GameplayEffectDefinition>();
+            _spawned.Add(shot);
+            shot.Populate("GE_TowerShot", DurationPolicy.Instant, default, default, ExecutionPolicy.RunInParallel, 0,
+                new List<ModifierDefinition> { new ModifierDefinition { Attribute = "Health", Operation = ModifierOp.Add, Magnitude = MagnitudeDefinition.Scalable(-20f) } },
+                null, null, null);
+
+            // Range 5, nearest-first: the tower fires one shot at the closest creep in range.
+            var inRange = world.Provider.OverlapSphere(tower.transform.position, 5f, SpatialFilter.None);
+            Assert.That(inRange, Is.Not.Empty, "at least one creep in range");
+            inRange[0].ApplyEffect(shot, 1, tower);
+
+            Assert.That(creepA.GetBaseValue("Health"), Is.EqualTo(80f).Within(1e-4f), "nearest in-range creep takes the shot");
+            Assert.That(creepB.GetBaseValue("Health"), Is.EqualTo(100f).Within(1e-4f), "single-target: the farther creep is untouched");
+            Assert.That(creepC.GetBaseValue("Health"), Is.EqualTo(100f).Within(1e-4f), "out of range");
+        }
+
+        /// <summary>
+        /// Puzzle signature (match combo): each match applies a combo effect that stacks under the §9.6
+        /// RunInMerge policy, and the per-stack score modifier multiplies the payout — three matches in a
+        /// chain bank 3× the points. Exercises stacking + per-stack modifier aggregation.
+        /// </summary>
+        [Test]
+        public void Puzzle_MatchCombo_StacksMultiplyScore()
+        {
+            var scoreSet = ScriptableObject.CreateInstance<AttributeSetDefinition>();
+            _spawned.Add(scoreSet);
+            scoreSet.Populate("Puzzle", null, new List<AttributeDefinition> { new AttributeDefinition { Name = "Score", DefaultBaseValue = 0f } });
+
+            var boardGo = new GameObject("Board");
+            _spawned.Add(boardGo);
+            var player = boardGo.AddComponent<UgasController>();
+            player.RegisterAttributeSet(new RuntimeAttributeSet(scoreSet));
+
+            // Each match adds +10 Score; RunInMerge stacks so a chain multiplies the payout.
+            var combo = ScriptableObject.CreateInstance<GameplayEffectDefinition>();
+            _spawned.Add(combo);
+            combo.Populate("GE_MatchCombo", DurationPolicy.Infinite, default, default, ExecutionPolicy.RunInMerge, 0,
+                new List<ModifierDefinition> { new ModifierDefinition { Attribute = "Score", Operation = ModifierOp.Add, Magnitude = MagnitudeDefinition.Scalable(10f) } },
+                null, null, null);
+
+            var chain = player.ApplyEffect(combo); // match 1
+            player.ApplyEffect(combo);             // match 2
+            player.ApplyEffect(combo);             // match 3
+            player.RecalculateAttributes();
+
+            Assert.That(chain.Stacks, Is.EqualTo(3), "three matches stack the combo");
+            Assert.That(player.GetCurrentValue("Score"), Is.EqualTo(30f).Within(1e-4f), "score scales per stack");
         }
     }
 }
