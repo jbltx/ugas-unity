@@ -78,6 +78,12 @@ namespace Jbltx.Ugas.Abilities
                         GetString(def.Params, "Tag", GetString(def.Params, "WaitTag", null)),
                         def.TickInterval,
                         def.Priority);
+                case "WaitInputRelease":
+                    return new WaitInputReleaseTask(
+                        ctx.Instigator,
+                        GetString(def.Params, "InputID", GetString(def.Params, "Action", GetString(def.Params, "InputAction", null))),
+                        def.TickInterval,
+                        def.Priority);
                 default:
                     return new NoOpTask(def.Type, def.TickInterval, def.Priority);
             }
