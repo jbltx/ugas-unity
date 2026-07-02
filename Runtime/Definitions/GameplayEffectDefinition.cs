@@ -25,8 +25,18 @@ namespace Jbltx.Ugas.Definitions
         public string CalculatorClass;
         public string DataTag;
 
+        [Header("ScalableFloat curve (optional, §9.4.2)")]
+        [Tooltip("Named curve-table reference; a ScalableFloat's Value is scaled by curve(CurveInput). The curve data is an engine seam registered via UgasController.RegisterCurve. Empty = flat Value.")]
+        public string Curve;
+        [Tooltip("The curve's x-axis input: an attribute name (e.g. Level) read from the target, or empty to use the applied ability/effect level.")]
+        public string CurveInput;
+
         public static MagnitudeDefinition Scalable(float v) =>
             new MagnitudeDefinition { Type = MagnitudeType.ScalableFloat, Value = v, Coefficient = 1f };
+
+        /// <summary>A ScalableFloat scaled by a named curve table at <paramref name="curveInput"/> (SPEC §9.4.2).</summary>
+        public static MagnitudeDefinition ScalableCurved(float v, string curve, string curveInput) =>
+            new MagnitudeDefinition { Type = MagnitudeType.ScalableFloat, Value = v, Coefficient = 1f, Curve = curve, CurveInput = curveInput };
     }
 
     /// <summary>A single attribute modifier within an effect (SPEC §9).</summary>

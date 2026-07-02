@@ -340,6 +340,9 @@ namespace Jbltx.Ugas.Runtime
         private Dictionary<string, IExecutionCalculation> _executions;
         private uint _executionSub;
 
+        // Named curve tables for ScalableFloat magnitudes (§9.4.2 seam); adopter-supplied, like _executions.
+        private Dictionary<string, System.Func<float, float>> _curves;
+
         /// <summary>
         /// Base seed for this controller's deterministic execution RNG (§13.8.1). Set it for reproducible
         /// prediction/tests; when 0 (the default) the process-local instance id is used.
@@ -399,11 +402,29 @@ namespace Jbltx.Ugas.Runtime
                     PeriodElapsed = ae.PeriodElapsed,
                     ExecutionCount = ae.ExecutionCount,
                     Stacks = ae.Stacks,
+                    InstigatorId = ae.InstigatorId,
+                    Source = ae.Source, // in-memory live source, for source-scaled magnitude re-resolution (§9.4.2 / §14.3.2)
                 });
             }
 
             foreach (var ability in _abilities.Values)
                 snapshot.GrantedAbilities.Add(new AbilityGrant { Ability = ability.Definition, Level = ability.Level });
+
+            // Directly-granted (loose) tags: owned explicit tags NOT contributed by an active effect's
+            // GrantedTags (§14.2 / §7) — lifecycle, class, faction, quest flags. Effect-granted tags are
+            // re-derived from the re-applied effects on restore, so excluding them avoids double-counting a
+            // ref-counted tag.
+            var effectGranted = new HashSet<string>();
+            for (int i = 0; i < active.Count; i++)
+            {
+                var g = active[i].Definition.GrantedTags;
+                for (int j = 0; j < g.Count; j++) effectGranted.Add(g[j]);
+            }
+            foreach (var tag in _ownedTags.ExplicitTags)
+            {
+                var tagName = _tagRegistry.GetName(tag);
+                if (!string.IsNullOrEmpty(tagName) && !effectGranted.Contains(tagName)) snapshot.OwnedTags.Add(tagName);
+            }
 
             return snapshot;
         }
@@ -426,11 +447,13 @@ namespace Jbltx.Ugas.Runtime
                 if (attr != null) attr.BaseValue = a.BaseValue;
             }
 
-            // 2. Re-apply active effects with resumed timers (§14.4 step 2).
+            // 2. Re-apply active effects with resumed timers (§14.4 step 2), rebinding each effect's
+            // instigator/source so source-scaled magnitudes (§9.4.2) re-derive against the original
+            // instigator rather than the restoring controller (§14.3.2).
             for (int i = 0; i < snapshot.ActiveEffects.Count; i++)
             {
                 var r = snapshot.ActiveEffects[i];
-                _effects.RestoreActive(r.Effect, r.Level, r.HasDuration, r.RemainingDuration, r.PeriodElapsed, r.ExecutionCount, r.Stacks);
+                _effects.RestoreActive(r.Effect, r.Level, r.HasDuration, r.RemainingDuration, r.PeriodElapsed, r.ExecutionCount, r.Stacks, r.Source, r.InstigatorId);
             }
 
             // 3. Re-grant abilities not already present (effect-granted ones come back via step 2).
@@ -439,6 +462,10 @@ namespace Jbltx.Ugas.Runtime
                 var g = snapshot.GrantedAbilities[i];
                 if (g.Ability != null && GetAbility(g.Ability.AbilityName) == null) GrantAbility(g.Ability, g.Level);
             }
+
+            // 3b. Re-grant the directly-granted (loose) tags (§14.2 / §14.4) — lifecycle, class, faction,
+            // quest flags. Effect-granted tags already returned via step 2; these are the disjoint remainder.
+            for (int i = 0; i < snapshot.OwnedTags.Count; i++) _ownedTags.AddTag(snapshot.OwnedTags[i]);
 
             // 4. Recompute derived state (§14.4 step 4).
             RecalculateAttributes();
@@ -451,7 +478,17 @@ namespace Jbltx.Ugas.Runtime
             switch (magnitude.Type)
             {
                 case MagnitudeType.ScalableFloat:
-                    return magnitude.Value; // TODO: curve scaling by level.
+                {
+                    // §9.4.2: Value × curve(CurveInput) when a named curve table is authored + registered
+                    // (RegisterCurve — an engine seam like ExecCalc). No curve authored/registered → flat Value.
+                    if (string.IsNullOrEmpty(magnitude.Curve) || _curves == null ||
+                        !_curves.TryGetValue(magnitude.Curve, out var curve) || curve == null)
+                        return magnitude.Value;
+                    float input = string.IsNullOrEmpty(magnitude.CurveInput)
+                        ? level
+                        : (FindAttribute(magnitude.CurveInput)?.CurrentValue ?? level);
+                    return magnitude.Value * curve(input);
+                }
 
                 case MagnitudeType.AttributeBased:
                 {
@@ -472,6 +509,18 @@ namespace Jbltx.Ugas.Runtime
                 default:
                     return magnitude.Value;
             }
+        }
+
+        /// <summary>
+        /// Registers a named curve table (SPEC §9.4.2): a ScalableFloat magnitude whose <c>Curve</c> names
+        /// this table resolves to <c>Value × curve(CurveInput)</c>. The curve data is content, so — like the
+        /// §9.6 ExecutionCalculation — it is an adopter-supplied seam, not shipped by the runtime.
+        /// </summary>
+        public void RegisterCurve(string name, System.Func<float, float> curve)
+        {
+            if (string.IsNullOrEmpty(name) || curve == null) return;
+            _curves ??= new Dictionary<string, System.Func<float, float>>();
+            _curves[name] = curve;
         }
 
         public void AddToBaseValue(string attributeName, float delta)
@@ -510,19 +559,34 @@ namespace Jbltx.Ugas.Runtime
             EnsureChannelScratch();
             var resolveRef = (Func<string, float?>)ResolveAttributeRef;
 
-            foreach (var set in _sets.Values)
+            // AttributeBased magnitudes (§9.4.2) and attribute-reference clamp bounds (§5.4) read OTHER
+            // attributes' current values, so a single forward pass is order-dependent: a value derived from
+            // an attribute declared later would read a stale current. Iterate the whole recompute to a fixed
+            // point — repeat until no current value changes — so derived attributes resolve regardless of
+            // declaration order. Capped to bound cyclic dependencies (best-effort: the last pass wins).
+            const int MaxPasses = 8;
+            const float Eps = 1e-5f;
+            bool changed = true;
+            for (int pass = 0; pass < MaxPasses && changed; pass++)
             {
-                foreach (var attr in set.Attributes)
+                changed = false;
+                foreach (var set in _sets.Values)
                 {
-                    int count = GatherModifiers(attr.Name);
-                    RuntimeAttributeSet.ResolveClamp(attr.Definition, resolveRef,
-                        out bool hasMin, out float min, out bool hasMax, out float max);
+                    foreach (var attr in set.Attributes)
+                    {
+                        int count = GatherModifiers(attr.Name);
+                        RuntimeAttributeSet.ResolveClamp(attr.Definition, resolveRef,
+                            out bool hasMin, out float min, out bool hasMax, out float max);
 
-                    attr.CurrentValue = AttributeKernel.Aggregate(
-                        attr.BaseValue,
-                        new ReadOnlySpan<ModifierSample>(_modBuffer, 0, count),
-                        new Span<float>(_channelScratch),
-                        hasMin, min, hasMax, max);
+                        float next = AttributeKernel.Aggregate(
+                            attr.BaseValue,
+                            new ReadOnlySpan<ModifierSample>(_modBuffer, 0, count),
+                            new Span<float>(_channelScratch),
+                            hasMin, min, hasMax, max);
+
+                        if (Mathf.Abs(next - attr.CurrentValue) > Eps) changed = true;
+                        attr.CurrentValue = next;
+                    }
                 }
             }
         }

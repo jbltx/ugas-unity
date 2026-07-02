@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Jbltx.Ugas.Definitions;
+using Jbltx.Ugas.Runtime;
 
 namespace Jbltx.Ugas.Persistence
 {
@@ -30,6 +31,14 @@ namespace Jbltx.Ugas.Persistence
         public readonly List<AttributeState> Attributes = new List<AttributeState>();
         public readonly List<ActiveEffectRecord> ActiveEffects = new List<ActiveEffectRecord>();
         public readonly List<AbilityGrant> GrantedAbilities = new List<AbilityGrant>();
+
+        /// <summary>
+        /// Tags owned by the controller that are NOT contributed by an active effect's <c>GrantedTags</c>
+        /// (SPEC §14.2 / §7): loose/directly-granted tags — lifecycle (<c>State.Alive</c>), class, faction,
+        /// quest flags, etc. Effect-granted tags are re-derived on restore from the re-applied effects, so
+        /// they are deliberately excluded here to avoid double-granting a ref-counted tag.
+        /// </summary>
+        public readonly List<string> OwnedTags = new List<string>();
     }
 
     /// <summary>A restored attribute's authoritative base value (§14.2).</summary>
@@ -61,6 +70,15 @@ namespace Jbltx.Ugas.Persistence
 
         /// <summary>Merged/stacked application count (§14.3.4).</summary>
         public int Stacks;
+
+        /// <summary>
+        /// The effect's instigator id (§14.3.2 provenance) and its live source runtime, so a source-scaled
+        /// magnitude (§9.4.2) re-derives against the original instigator on restore instead of falling back
+        /// to the restoring controller. <see cref="Source"/> is the in-memory live reference (this snapshot
+        /// holds live definition references); disk serialization would resolve <see cref="InstigatorId"/>.
+        /// </summary>
+        public int InstigatorId;
+        public IUgasRuntime Source;
     }
 
     /// <summary>A granted ability not sourced from an active effect (§14.2).</summary>
