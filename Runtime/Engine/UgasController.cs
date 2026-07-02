@@ -346,6 +346,9 @@ namespace Jbltx.Ugas.Runtime
         // Named curve tables for ScalableFloat magnitudes (§9.4.2 seam); adopter-supplied, like _executions.
         private Dictionary<string, System.Func<float, float>> _curves;
 
+        // Named Modifier Magnitude Calculators for CustomCalculation magnitudes (§9.4.2 seam); adopter-supplied.
+        private Dictionary<string, IMagnitudeCalculation> _magnitudeCalcs;
+
         /// <summary>
         /// Base seed for this controller's deterministic execution RNG (§13.8.1). Set it for reproducible
         /// prediction/tests; when 0 (the default) the process-local instance id is used.
@@ -514,7 +517,14 @@ namespace Jbltx.Ugas.Runtime
                         : magnitude.Value;
 
                 case MagnitudeType.CustomCalculation:
-                    return magnitude.Value; // TODO: invoke CalculatorClass.
+                {
+                    // §9.4.2: a named Modifier Magnitude Calculator (MMC) computes the value from source/target
+                    // + level + SetByCaller. Read-only + deterministic (runs on every recompute). Unregistered → flat Value.
+                    if (string.IsNullOrEmpty(magnitude.CalculatorClass) || _magnitudeCalcs == null ||
+                        !_magnitudeCalcs.TryGetValue(magnitude.CalculatorClass, out var mmc) || mmc == null)
+                        return magnitude.Value;
+                    return mmc.Calculate(new MagnitudeCalculationContext { Source = source, Target = this, Level = level, SetByCaller = setByCaller });
+                }
 
                 default:
                     return magnitude.Value;
@@ -531,6 +541,18 @@ namespace Jbltx.Ugas.Runtime
             if (string.IsNullOrEmpty(name) || curve == null) return;
             _curves ??= new Dictionary<string, System.Func<float, float>>();
             _curves[name] = curve;
+        }
+
+        /// <summary>
+        /// Registers a Modifier Magnitude Calculator (MMC) by name (SPEC §9.4.2 CustomCalculation): a
+        /// magnitude whose <c>CalculatorClass</c> names it resolves to <see cref="IMagnitudeCalculation.Calculate"/>.
+        /// Like the §9.6 ExecutionCalculation, the MMC is adopter-supplied and not shipped by the runtime.
+        /// </summary>
+        public void RegisterMagnitudeCalculation(string name, IMagnitudeCalculation calculation)
+        {
+            if (string.IsNullOrEmpty(name) || calculation == null) return;
+            _magnitudeCalcs ??= new Dictionary<string, IMagnitudeCalculation>();
+            _magnitudeCalcs[name] = calculation;
         }
 
         public void AddToBaseValue(string attributeName, float delta)
