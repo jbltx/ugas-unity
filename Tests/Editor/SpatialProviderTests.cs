@@ -86,13 +86,10 @@ namespace Jbltx.Ugas.Tests.Editor
         public void RequireTags_FiltersToMatchingAnchors()
         {
             var (provider, _, b, _, d) = Scene();
-            // First grant on each empty registry interns identically (ancestors-first), so a handle
-            // resolved from one anchor matches the other — the §7 hierarchical id contract.
             b.GrantTag("Faction.Enemy");
             d.GrantTag("Faction.Enemy");
-            var enemy = b.TagRegistry.Resolve("Faction.Enemy");
 
-            var hits = provider.OverlapSphere(Vector3.zero, 100f, new SpatialFilter { RequireTags = new[] { enemy } });
+            var hits = provider.OverlapSphere(Vector3.zero, 100f, new SpatialFilter { RequireTags = new[] { "Faction.Enemy" } });
             Assert.That(Names(hits), Is.EqualTo(new[] { "B", "D" }));
         }
 
@@ -102,11 +99,38 @@ namespace Jbltx.Ugas.Tests.Editor
             var (provider, _, b, _, d) = Scene();
             b.GrantTag("Faction.Enemy");
             d.GrantTag("Faction.Enemy");
-            var enemy = b.TagRegistry.Resolve("Faction.Enemy");
 
             // A and C are never initialized (no public call) — exercises the null-OwnedTags guard.
-            var hits = provider.OverlapSphere(Vector3.zero, 100f, new SpatialFilter { ExcludeTags = new[] { enemy } });
+            var hits = provider.OverlapSphere(Vector3.zero, 100f, new SpatialFilter { ExcludeTags = new[] { "Faction.Enemy" } });
             Assert.That(Names(hits), Is.EqualTo(new[] { "A", "C" }));
+        }
+
+        [Test]
+        public void TagFilter_IsSoundAcrossControllersWithDifferentRegistries()
+        {
+            // Force divergent intern orders so "Faction.Enemy" gets a DIFFERENT handle id in each
+            // registry — the exact condition under which the old handle-based filter silently
+            // mismatched across controllers (harness-eval F3).
+            var x = Anchor("X", new Vector3(1, 0, 0));
+            x.GrantTag("Team.Red");       // interned first here → pushes Faction.Enemy to a higher id
+            x.GrantTag("Faction.Enemy");
+            var y = Anchor("Y", new Vector3(2, 0, 0));
+            y.GrantTag("Faction.Enemy");  // interned first here → a lower id
+
+            Assert.That(x.TagRegistry.Find("Faction.Enemy").Id,
+                Is.Not.EqualTo(y.TagRegistry.Find("Faction.Enemy").Id),
+                "precondition: the same tag has different handle ids in the two registries");
+
+            var provider = new SimpleSpatialProvider();
+            provider.Register(x);
+            provider.Register(y);
+
+            // Name-based matching resolves per candidate registry, so both match despite the id divergence.
+            var required = provider.OverlapSphere(Vector3.zero, 100f, new SpatialFilter { RequireTags = new[] { "Faction.Enemy" } });
+            Assert.That(Names(required), Is.EquivalentTo(new[] { "X", "Y" }), "require-by-name matches both registries");
+
+            var excluded = provider.OverlapSphere(Vector3.zero, 100f, new SpatialFilter { ExcludeTags = new[] { "Faction.Enemy" } });
+            Assert.That(excluded, Is.Empty, "exclude-by-name omits both");
         }
 
         [Test]

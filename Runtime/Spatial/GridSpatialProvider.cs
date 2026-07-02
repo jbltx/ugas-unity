@@ -172,8 +172,8 @@ namespace Jbltx.Ugas.Spatial
             var tags = gc.OwnedTags;
             if (tags == null) return !needRequire;
 
-            if (needRequire && !tags.HasAll(filter.RequireTags)) return false;
-            if (needExclude && tags.HasAny(filter.ExcludeTags)) return false;
+            if (needRequire && !tags.HasAllNamed(filter.RequireTags)) return false;
+            if (needExclude && tags.HasAnyNamed(filter.ExcludeTags)) return false;
             return true;
         }
     }

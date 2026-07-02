@@ -128,6 +128,26 @@ namespace Jbltx.Ugas.Tags
         /// <summary>True if <i>no</i> tag is present (hierarchical).</summary>
         public bool HasNone(IReadOnlyList<GameplayTag> tags) => !HasAny(tags);
 
+        /// <summary>
+        /// True if <i>any</i> of the named tags is present (hierarchical). Each name is resolved against
+        /// THIS container's own registry, so the check is sound regardless of which registry produced the
+        /// list — unlike the handle overloads, whose ids are only meaningful within a single registry.
+        /// </summary>
+        public bool HasAnyNamed(IReadOnlyList<string> names)
+        {
+            if (names == null) return false;
+            for (int i = 0; i < names.Count; i++) if (HasTag(names[i])) return true;
+            return false;
+        }
+
+        /// <summary>True if <i>every</i> named tag is present (hierarchical), resolved against this container's registry.</summary>
+        public bool HasAllNamed(IReadOnlyList<string> names)
+        {
+            if (names == null) return true;
+            for (int i = 0; i < names.Count; i++) if (!HasTag(names[i])) return false;
+            return true;
+        }
+
         private void Increment(int id)
         {
             _all.TryGetValue(id, out int a);
