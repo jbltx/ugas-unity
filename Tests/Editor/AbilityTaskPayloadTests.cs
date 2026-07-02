@@ -111,5 +111,35 @@ namespace Jbltx.Ugas.Tests.Editor
             owner.Tick(0.016f);
             Assert.That(owner.GetCurrentValue("MaxHealth"), Is.EqualTo(100f).Within(1e-4f), "dispel payload removed the buff");
         }
+
+        [Test]
+        public void Sequencing_WaitThenApply_RunsPayloadAfterTheWaitNotImmediately()
+        {
+            var owner = Owner();
+            owner.RegisterEffect(Effect("GE_AddMaterials", "Materials", 5f, DurationPolicy.Instant));
+
+            // A two-task ability: WaitDelay(0.5) THEN refill — the reload/wind-up shape (harness-eval F1).
+            var so = ScriptableObject.CreateInstance<GameplayAbilityDefinition>();
+            _spawned.Add(so);
+            so.Populate("GA_TimedGather", default, new List<AbilityTaskDefinition>
+            {
+                new AbilityTaskDefinition { Type = "WaitDelay", Params = new List<TaskParam> { new TaskParam { Key = "Duration", Value = "0.5" } } },
+                new AbilityTaskDefinition { Type = "ApplyEffectToOwner", Params = new List<TaskParam> { new TaskParam { Key = "EffectClass", Value = "GE_AddMaterials" } } },
+            }, null, null);
+            owner.GrantAbility(so);
+
+            Assert.That(owner.TryActivateAbility("GA_TimedGather"), Is.True);
+            var ability = owner.GetAbility("GA_TimedGather");
+
+            // Before the wait elapses, the payload must NOT have run (the F1 bug fired it on tick 1).
+            owner.Tick(0.3f);
+            Assert.That(owner.GetBaseValue("Materials"), Is.EqualTo(0f).Within(1e-4f), "payload is gated by the WaitDelay, not applied immediately");
+            Assert.That(ability.State, Is.EqualTo(AbilityState.Active), "still waiting on the first task");
+
+            // Past the wait: WaitDelay completes → ApplyEffectToOwner activates → runs → sequence ends.
+            for (int i = 0; i < 5; i++) owner.Tick(0.1f);
+            Assert.That(owner.GetBaseValue("Materials"), Is.EqualTo(5f).Within(1e-4f), "payload ran once the wait completed");
+            Assert.That(ability.State, Is.EqualTo(AbilityState.Granted), "sequence exhausted → ability auto-ended (re-activatable)");
+        }
     }
 }
