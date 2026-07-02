@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Jbltx.Ugas.Abilities;
 using Jbltx.Ugas.Cues;
 using Jbltx.Ugas.Definitions;
 using Jbltx.Ugas.Kernel;
@@ -157,7 +158,57 @@ namespace Jbltx.Ugas.Runtime
         public bool TryActivateAbility(string abilityName)
         {
             EnsureInitialized();
-            return _abilities.TryGetValue(abilityName, out var ability) && ability.TryActivate(this);
+            if (!_abilities.TryGetValue(abilityName, out var ability)) return false;
+
+            // §8.7: refuse activation while a currently-active ability blocks this ability's identity tags.
+            if (IsBlockedByActiveAbility(ability)) return false;
+
+            if (!ability.TryActivate(this)) return false;
+
+            // §8.6/§8.7: a successful activation cancels every active ability whose identity tags it names
+            // (the combo cancel / commitment lockout). Done after activation so a failed activation cancels nothing.
+            CancelActiveAbilitiesMatching(ability);
+            return true;
+        }
+
+        // §8.7 BlockAbilitiesWithTags: true when some other active ability names one of this ability's AbilityTags.
+        private bool IsBlockedByActiveAbility(GameplayAbility ability)
+        {
+            var identity = ability.AbilityTags;
+            if (identity.Count == 0) return false;
+            foreach (var other in _abilities.Values)
+            {
+                if (other == ability || other.State != AbilityState.Active) continue;
+                if (TagsIntersect(other.BlockAbilitiesWithTags, identity)) return true;
+            }
+            return false;
+        }
+
+        // §8.6 CancelAbilitiesWithTags: cancel every active ability whose AbilityTags the activator names.
+        private void CancelActiveAbilitiesMatching(GameplayAbility activator)
+        {
+            if (activator.CancelAbilitiesWithTags.Count == 0) return;
+            List<GameplayAbility> toCancel = null;
+            foreach (var other in _abilities.Values)
+            {
+                if (other == activator || other.State != AbilityState.Active) continue;
+                if (TagsIntersect(activator.CancelAbilitiesWithTags, other.AbilityTags))
+                    (toCancel ??= new List<GameplayAbility>()).Add(other);
+            }
+            if (toCancel != null)
+                for (int i = 0; i < toCancel.Count; i++) toCancel[i].CancelAbility();
+        }
+
+        // Exact-identity intersection of two resolved tag-handle lists. All of a controller's abilities
+        // resolve against this controller's registry, so handle equality is sound here (no cross-registry
+        // comparison — cf. §7 / finding F3).
+        private static bool TagsIntersect(IReadOnlyList<GameplayTag> a, IReadOnlyList<GameplayTag> b)
+        {
+            if (a == null || b == null || a.Count == 0 || b.Count == 0) return false;
+            for (int i = 0; i < a.Count; i++)
+                for (int j = 0; j < b.Count; j++)
+                    if (a[i] == b[j]) return true;
+            return false;
         }
 
         // ---- Effects ----

@@ -26,6 +26,13 @@ namespace Jbltx.Ugas.Runtime
         private readonly List<GameplayTag> _activationBlocked = new List<GameplayTag>();
         private readonly List<GameplayTag> _blockedBy = new List<GameplayTag>();
         private readonly List<GameplayTag> _activationOwned = new List<GameplayTag>();
+        // §8 inter-ability relationship handles (resolved once when granted). These describe THIS ability
+        // and are coordinated across the owner's abilities by the controller (§8.6/§8.7): AbilityTags is
+        // this ability's identity; CancelAbilitiesWith names ability-identity tags this cancels on activation;
+        // BlockAbilitiesWith names ability-identity tags this blocks from activating while it is active.
+        private readonly List<GameplayTag> _abilityTags = new List<GameplayTag>();
+        private readonly List<GameplayTag> _cancelAbilitiesWith = new List<GameplayTag>();
+        private readonly List<GameplayTag> _blockAbilitiesWith = new List<GameplayTag>();
         // Tags the cooldown effect grants for its duration; their presence means "on cooldown".
         private readonly List<GameplayTag> _cooldownTags = new List<GameplayTag>();
         private readonly List<IAbilityTask> _runningTasks = new List<IAbilityTask>();
@@ -34,6 +41,15 @@ namespace Jbltx.Ugas.Runtime
 
         /// <summary>The ability's currently-instantiated tasks (§10), in declaration order.</summary>
         public IReadOnlyList<IAbilityTask> RunningTasks => _runningTasks;
+
+        /// <summary>This ability's identity tags (§8.7 AbilityTags), resolved at grant time.</summary>
+        public IReadOnlyList<GameplayTag> AbilityTags => _abilityTags;
+
+        /// <summary>Ability-identity tags this ability cancels on activation (§8.6/§8.7 CancelAbilitiesWithTags).</summary>
+        public IReadOnlyList<GameplayTag> CancelAbilitiesWithTags => _cancelAbilitiesWith;
+
+        /// <summary>Ability-identity tags this ability blocks from activating while it is active (§8.7 BlockAbilitiesWithTags).</summary>
+        public IReadOnlyList<GameplayTag> BlockAbilitiesWithTags => _blockAbilitiesWith;
 
         public GameplayAbility(GameplayAbilityDefinition definition, int level = 1)
         {
@@ -50,6 +66,9 @@ namespace Jbltx.Ugas.Runtime
             Resolve(registry, Definition.Tags.ActivationBlockedTags, _activationBlocked);
             Resolve(registry, Definition.Tags.BlockedByTags, _blockedBy);
             Resolve(registry, Definition.Tags.ActivationOwnedTags, _activationOwned);
+            Resolve(registry, Definition.Tags.AbilityTags, _abilityTags);
+            Resolve(registry, Definition.Tags.CancelAbilitiesWithTags, _cancelAbilitiesWith);
+            Resolve(registry, Definition.Tags.BlockAbilitiesWithTags, _blockAbilitiesWith);
             _cooldownTags.Clear();
             if (Definition.Cooldown != null) Resolve(registry, Definition.Cooldown.GrantedTags, _cooldownTags);
             State = AbilityState.Granted;
