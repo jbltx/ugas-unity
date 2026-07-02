@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Jbltx.Ugas.Definitions;
+using UnityEngine;
 
 namespace Jbltx.Ugas.Input
 {
@@ -19,13 +20,24 @@ namespace Jbltx.Ugas.Input
     }
 
     /// <summary>
+    /// Read-only access to current input-action state for latent input tasks (SPEC §10.3 / §11.2): e.g.
+    /// <c>WaitInputRelease</c> polls this to complete when its action is no longer held. Implemented by
+    /// <see cref="UgasInputSystem"/>; a controller exposes one via <c>UgasController.InputState</c>.
+    /// </summary>
+    public interface IInputStateSource
+    {
+        /// <summary>True while <paramref name="action"/> resolves to a non-zero value this frame (held).</summary>
+        bool IsActionHeld(string action);
+    }
+
+    /// <summary>
     /// The top of the §11 input stack: each <see cref="Update"/> it resolves every binding against the
     /// input source (device → value through the §11.6 modifier pipeline, §11.5), aggregates the strongest
     /// value per action, evaluates the action's trigger behavior (§11.2), and routes fired actions to the
     /// <see cref="UgasInputRouter"/> — which gates them by the active tag-driven action sets (§11.3) and
     /// activates the bound ability. Closing the loop from a raw device event to an ability activation.
     /// </summary>
-    public sealed class UgasInputSystem
+    public sealed class UgasInputSystem : IInputStateSource
     {
         private readonly UgasInputRouter _router;
         private readonly IInputSource _source;
@@ -48,6 +60,9 @@ namespace Jbltx.Ugas.Input
         {
             _router = router ?? throw new ArgumentNullException(nameof(router));
             _source = source ?? throw new ArgumentNullException(nameof(source));
+            // Wire this system as the owner's input-state source so latent input tasks (WaitInputRelease,
+            // §10.3) can observe action state. Callers may override UgasController.InputState afterward.
+            if (_router.Owner != null) _router.Owner.InputState = this;
         }
 
         public void AddBinding(InputBinding binding)
@@ -89,6 +104,10 @@ namespace Jbltx.Ugas.Input
                 if (!_router.SendInput(pair.Key) && Buffering.Enabled) Enqueue(pair.Key, time);
             }
         }
+
+        /// <summary>§10.3/§11.2: true while the action resolved to a non-zero value on the last <see cref="Update"/> (held).</summary>
+        public bool IsActionHeld(string action) =>
+            action != null && _actionValues.TryGetValue(action, out var v) && !Mathf.Approximately(v, 0f);
 
         // Discards expired buffered inputs, then retries the rest oldest-first, removing the first that
         // activates (§11.7). Unexpired-but-still-blocked inputs remain for the next update.

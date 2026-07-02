@@ -29,6 +29,10 @@ namespace Jbltx.Ugas.Input
             _owner = owner ? owner : throw new ArgumentNullException(nameof(owner));
         }
 
+        /// <summary>The controller this router activates abilities on (§11.3). Lets the input system wire
+        /// itself as the owner's input-state source for latent input tasks like WaitInputRelease (§10.3).</summary>
+        public UgasController Owner => _owner;
+
         public void RegisterActionSet(ActionSetDefinition set)
         {
             if (set != null && !_sets.Contains(set)) _sets.Add(set);

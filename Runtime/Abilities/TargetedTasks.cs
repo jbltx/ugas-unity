@@ -92,4 +92,33 @@ namespace Jbltx.Ugas.Abilities
             if (_owner.OwnedTags != null && _owner.OwnedTags.HasTag(_tagName)) Complete();
         }
     }
+
+    /// <summary>
+    /// Latent input task (SPEC §10.3 Input-Based / WaitInputRelease): pauses the ability until the
+    /// triggering input action is released — the "hold to aim / charge, release to fire" shape. Polls the
+    /// owner's <see cref="Jbltx.Ugas.Input.IInputStateSource"/> (auto-wired by the input system), completing
+    /// once the action is no longer held. If no input state is attached (an unwired eval-sim) or no action
+    /// is named, it completes immediately rather than hanging the ability.
+    /// </summary>
+    public sealed class WaitInputReleaseTask : AbilityTaskBase
+    {
+        private readonly UgasController _owner;
+        private readonly string _action;
+
+        public override string Type => "WaitInputRelease";
+
+        public WaitInputReleaseTask(UgasController owner, string action, float tickInterval = 0f, int priority = 0)
+            : base(tickInterval, priority)
+        {
+            _owner = owner;
+            _action = action;
+        }
+
+        protected override void OnTick(float step)
+        {
+            var input = _owner != null ? _owner.InputState : null;
+            if (input == null || string.IsNullOrEmpty(_action)) { Complete(); return; } // unwired → don't hang
+            if (!input.IsActionHeld(_action)) Complete(); // released
+        }
+    }
 }

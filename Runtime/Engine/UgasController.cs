@@ -265,6 +265,14 @@ namespace Jbltx.Ugas.Runtime
         /// </summary>
         public ISpatialQueryProvider SpatialProvider { get; set; }
 
+        /// <summary>
+        /// The current input-action state for latent input tasks (§10.3 WaitInputRelease). Auto-wired by
+        /// <see cref="Jbltx.Ugas.Input.UgasInputSystem"/> on construction (from the router's owner); may be
+        /// set directly by the engine binding. Null when no input stack is attached — such tasks then
+        /// complete immediately rather than hanging.
+        /// </summary>
+        public Jbltx.Ugas.Input.IInputStateSource InputState { get; set; }
+
         private Dictionary<string, GameplayEffectDefinition> _effectsByName;
 
         /// <summary>Registers an effect by its <see cref="GameplayEffectDefinition.EffectName"/> so tasks can resolve it by name (§10).</summary>
