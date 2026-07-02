@@ -168,7 +168,8 @@ namespace Jbltx.Ugas.Runtime
         /// current period (§14.3.3 rule 2) — the effect resumes exactly where it was captured.
         /// </summary>
         public void RestoreActive(GameplayEffectDefinition effect, int level, bool hasDuration,
-            float remainingDuration, float periodElapsed, int executionCount, int stacks)
+            float remainingDuration, float periodElapsed, int executionCount, int stacks,
+            IUgasRuntime source = null, int instigatorId = -1)
         {
             if (effect == null) return;
 
@@ -181,6 +182,8 @@ namespace Jbltx.Ugas.Runtime
             a.PeriodElapsed = periodElapsed;
             a.ExecutionCount = executionCount;
             a.Stacks = stacks < 1 ? 1 : stacks;
+            a.Source = source;          // rebind instigator/source so §9.4.2 source-scaled magnitudes re-derive correctly (§14.3.2)
+            a.InstigatorId = instigatorId;
             _active.Add(a);
 
             var granted = effect.GrantedTags;
