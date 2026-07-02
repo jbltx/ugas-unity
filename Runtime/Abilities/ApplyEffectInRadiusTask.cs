@@ -51,10 +51,7 @@ namespace Jbltx.Ugas.Abilities
             {
                 var filter = new SpatialFilter();
                 if (!string.IsNullOrEmpty(_ignoreTag))
-                {
-                    var tag = _instigator.TagRegistry.Resolve(_ignoreTag);
-                    if (tag.IsValid) filter.ExcludeTags = new[] { tag };
-                }
+                    filter.ExcludeTags = new[] { _ignoreTag }; // matched by name in each candidate's own registry (§7)
 
                 var hits = _provider.OverlapSphere(_instigator.transform.position, _radius, filter);
                 // Snapshot before applying (§17.3 rule 1): the provider reuses its result buffer. The

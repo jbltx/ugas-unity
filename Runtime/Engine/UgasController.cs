@@ -223,8 +223,8 @@ namespace Jbltx.Ugas.Runtime
         /// The <paramref name="provider"/> is the spatial index the caller maintains — the engine
         /// binding owns it, keeping the controller free of global state. The radius resolves through
         /// <see cref="ResolveMagnitude"/> against THIS controller (the instigator), so an AttributeBased
-        /// radius scales with the caster's stat (§17.3). Tag filters resolve against this controller's
-        /// registry, which is correct when the world shares one registry (the norm). A Cone area is
+        /// radius scales with the caster's stat (§17.3). Tag filters are matched by name against each
+        /// candidate's own registry (§7), so they are sound across registries (see SpatialFilter). A Cone area is
         /// swept about this controller's facing (<c>transform.forward</c>) via <c>OverlapCone</c>.
         /// </remarks>
         public IReadOnlyList<UgasController> ApplyAreaEffect(
@@ -238,8 +238,9 @@ namespace Jbltx.Ugas.Runtime
             float radius = ResolveMagnitude(area.Radius, level);
             var filter = new SpatialFilter
             {
-                RequireTags = ResolveTags(area.RequireTags),
-                ExcludeTags = ResolveTags(area.ExcludeTags),
+                // Matched by name against each candidate's own registry (§7) — sound across registries; see SpatialFilter.
+                RequireTags = area.RequireTags,
+                ExcludeTags = area.ExcludeTags,
                 MaxResults = area.MaxTargets,
             };
 
@@ -300,19 +301,6 @@ namespace Jbltx.Ugas.Runtime
         /// <summary>A fresh deterministic RNG stream for the next execution — a disjoint sub-stream per §13.8.1.</summary>
         public UgasRandom NextExecutionRandom()
             => new UgasRandom(RandomSeed != 0 ? RandomSeed : (ulong)_instanceId, _executionSub++);
-
-        // Resolves tag names to interned handles in this controller's registry; null when empty.
-        private IReadOnlyList<GameplayTag> ResolveTags(List<string> names)
-        {
-            if (names == null || names.Count == 0) return null;
-            var tags = new List<GameplayTag>(names.Count);
-            for (int i = 0; i < names.Count; i++)
-            {
-                var t = _tagRegistry.Resolve(names[i]);
-                if (t.IsValid) tags.Add(t);
-            }
-            return tags;
-        }
 
         // ---- Tick ----
 

@@ -92,27 +92,12 @@ namespace Jbltx.Ugas.Spatial
             }
         }
 
+        // Tag filters are matched by NAME against each candidate's own registry (§17.2 / §7), so
+        // perception stays sound even when observer and targets use different tag registries.
         private SpatialFilter BuildFilter() => new SpatialFilter
         {
-            RequireTags = ResolveTags(_definition.RequireTags),
-            ExcludeTags = ResolveTags(_definition.ExcludeTags),
+            RequireTags = _definition.RequireTags,
+            ExcludeTags = _definition.ExcludeTags,
         };
-
-        // Resolves tag names against the observer's registry; null when empty or the observer is not
-        // yet initialized (no registry) — in which case the filter degrades to "sense all" until it is.
-        private List<GameplayTag> ResolveTags(IReadOnlyList<string> names)
-        {
-            if (names == null || names.Count == 0) return null;
-            var registry = _observer.TagRegistry;
-            if (registry == null) return null;
-
-            var list = new List<GameplayTag>(names.Count);
-            for (int i = 0; i < names.Count; i++)
-            {
-                var t = registry.Resolve(names[i]);
-                if (t.IsValid) list.Add(t);
-            }
-            return list;
-        }
     }
 }
