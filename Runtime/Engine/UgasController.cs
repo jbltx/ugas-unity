@@ -219,13 +219,16 @@ namespace Jbltx.Ugas.Runtime
         /// <summary>
         /// Applies an effect from a given <paramref name="source"/> (the instigator), so Source-scaled
         /// magnitudes (§9.4.2) resolve against it — e.g. damage scaled by the attacker's WeaponDamage.
-        /// A null source resolves everything against this controller.
+        /// A null source resolves everything against this controller. <paramref name="setByCaller"/> supplies
+        /// per-application SetByCaller magnitudes (§9.4.2), keyed by DataTag — e.g. one shared damage effect
+        /// whose base value each caller passes in.
         /// </summary>
-        public ActiveGameplayEffect ApplyEffect(GameplayEffectDefinition effect, int level, IUgasRuntime source)
+        public ActiveGameplayEffect ApplyEffect(GameplayEffectDefinition effect, int level, IUgasRuntime source,
+            System.Collections.Generic.IReadOnlyDictionary<string, float> setByCaller = null)
         {
             EnsureInitialized();
             if (!MeetsApplicationRequirements(effect)) return null; // §9 ApplicationRequiredTags gate
-            return _effects.ApplyEffect(effect, level, _instanceId, source);
+            return _effects.ApplyEffect(effect, level, _instanceId, source, setByCaller);
         }
 
         // §9: an effect applies only while the owner currently owns every ApplicationRequiredTag
@@ -404,6 +407,7 @@ namespace Jbltx.Ugas.Runtime
                     Stacks = ae.Stacks,
                     InstigatorId = ae.InstigatorId,
                     Source = ae.Source, // in-memory live source, for source-scaled magnitude re-resolution (§9.4.2 / §14.3.2)
+                    SetByCaller = ae.SetByCaller,
                 });
             }
 
@@ -453,7 +457,7 @@ namespace Jbltx.Ugas.Runtime
             for (int i = 0; i < snapshot.ActiveEffects.Count; i++)
             {
                 var r = snapshot.ActiveEffects[i];
-                _effects.RestoreActive(r.Effect, r.Level, r.HasDuration, r.RemainingDuration, r.PeriodElapsed, r.ExecutionCount, r.Stacks, r.Source, r.InstigatorId);
+                _effects.RestoreActive(r.Effect, r.Level, r.HasDuration, r.RemainingDuration, r.PeriodElapsed, r.ExecutionCount, r.Stacks, r.Source, r.InstigatorId, r.SetByCaller);
             }
 
             // 3. Re-grant abilities not already present (effect-granted ones come back via step 2).
@@ -473,7 +477,8 @@ namespace Jbltx.Ugas.Runtime
 
         // ---- IUgasRuntime ----
 
-        public float ResolveMagnitude(in MagnitudeDefinition magnitude, int level, IUgasRuntime source = null)
+        public float ResolveMagnitude(in MagnitudeDefinition magnitude, int level, IUgasRuntime source = null,
+            System.Collections.Generic.IReadOnlyDictionary<string, float> setByCaller = null)
         {
             switch (magnitude.Type)
             {
@@ -501,7 +506,12 @@ namespace Jbltx.Ugas.Runtime
                 }
 
                 case MagnitudeType.SetByCaller:
-                    return magnitude.Value; // TODO: lookup by DataTag.
+                    // §9.4.2: a per-application value the caller passes at ApplyEffect time, keyed by DataTag.
+                    // Falls back to the static Value when no value was supplied for the tag.
+                    return (setByCaller != null && !string.IsNullOrEmpty(magnitude.DataTag) &&
+                            setByCaller.TryGetValue(magnitude.DataTag, out var byCaller))
+                        ? byCaller
+                        : magnitude.Value;
 
                 case MagnitudeType.CustomCalculation:
                     return magnitude.Value; // TODO: invoke CalculatorClass.
@@ -624,7 +634,7 @@ namespace Jbltx.Ugas.Runtime
                     var mod = mods[m];
                     if (mod.Attribute != attributeName) continue;
 
-                    float magnitude = ResolveMagnitude(mod.Magnitude, rec.Level, rec.Source);
+                    float magnitude = ResolveMagnitude(mod.Magnitude, rec.Level, rec.Source, rec.SetByCaller);
                     int channelId = _channels.GetOrAdd(mod.Channel);
 
                     for (int s = 0; s < rec.Stacks; s++)

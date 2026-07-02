@@ -34,6 +34,13 @@ namespace Jbltx.Ugas.Runtime
         /// <summary>The deterministic random stream for this execution (§9 context.RNG).</summary>
         public UgasRandom Rng;
 
+        /// <summary>Per-application SetByCaller magnitudes (§9.4.2), keyed by DataTag; null = none supplied.</summary>
+        public System.Collections.Generic.IReadOnlyDictionary<string, float> SetByCaller;
+
+        /// <summary>Reads a SetByCaller value by <paramref name="tag"/>, or <paramref name="fallback"/> if not supplied.</summary>
+        public float GetSetByCaller(string tag, float fallback = 0f) =>
+            SetByCaller != null && tag != null && SetByCaller.TryGetValue(tag, out var v) ? v : fallback;
+
         /// <summary>Current value of a source attribute (0 if no source / absent).</summary>
         public float SourceAttribute(string name) => Source != null ? Source.GetCurrentValue(name) : 0f;
 

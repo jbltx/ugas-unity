@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Jbltx.Ugas.Definitions;
 
 namespace Jbltx.Ugas.Runtime
@@ -25,6 +26,9 @@ namespace Jbltx.Ugas.Runtime
         /// <summary>The source/instigator, for resolving Source-scaled magnitudes (§9.4.2/§9.9). Null = self.</summary>
         public IUgasRuntime Source;
 
+        /// <summary>Per-application SetByCaller magnitudes (§9.4.2), keyed by DataTag; set at ApplyEffect time. Null = none.</summary>
+        public IReadOnlyDictionary<string, float> SetByCaller;
+
         public bool IsInfinite => Definition != null && Definition.DurationPolicy == DurationPolicy.Infinite;
         public bool IsPeriodic => Definition != null && Definition.IsPeriodic;
 
@@ -41,6 +45,7 @@ namespace Jbltx.Ugas.Runtime
             ExecutionCount = 0;
             InstigatorId = -1;
             Source = null;
+            SetByCaller = null;
         }
     }
 }

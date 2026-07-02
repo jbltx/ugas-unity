@@ -79,6 +79,10 @@ namespace Jbltx.Ugas.Persistence
         /// </summary>
         public int InstigatorId;
         public IUgasRuntime Source;
+
+        /// <summary>Per-application SetByCaller magnitudes (§9.4.2), so a durational SetByCaller effect resolves
+        /// to the same values after restore instead of falling back to the static magnitude.</summary>
+        public IReadOnlyDictionary<string, float> SetByCaller;
     }
 
     /// <summary>A granted ability not sourced from an active effect (§14.2).</summary>

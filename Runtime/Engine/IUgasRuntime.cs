@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Jbltx.Ugas.Definitions;
 using Jbltx.Ugas.Tags;
 
@@ -24,7 +25,8 @@ namespace Jbltx.Ugas.Runtime
         /// controller's attributes unless <paramref name="source"/> is given and the magnitude's
         /// <c>Source</c> is <c>Source</c> (§9.4.2), in which case they read the source/instigator.
         /// </summary>
-        float ResolveMagnitude(in MagnitudeDefinition magnitude, int level, IUgasRuntime source = null);
+        float ResolveMagnitude(in MagnitudeDefinition magnitude, int level, IUgasRuntime source = null,
+            IReadOnlyDictionary<string, float> setByCaller = null);
 
         /// <summary>Adds <paramref name="delta"/> to the named attribute's base value (Instant effects).</summary>
         void AddToBaseValue(string attributeName, float delta);

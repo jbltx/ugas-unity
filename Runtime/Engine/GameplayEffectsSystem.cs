@@ -54,13 +54,14 @@ namespace Jbltx.Ugas.Runtime
         /// Applies an effect. Instant effects mutate base values and return null; HasDuration /
         /// Infinite effects are tracked and the live (pooled) record is returned.
         /// </summary>
-        public ActiveGameplayEffect ApplyEffect(GameplayEffectDefinition effect, int level = 1, int instigatorId = -1, IUgasRuntime source = null)
+        public ActiveGameplayEffect ApplyEffect(GameplayEffectDefinition effect, int level = 1, int instigatorId = -1, IUgasRuntime source = null,
+            IReadOnlyDictionary<string, float> setByCaller = null)
         {
             if (effect == null) throw new ArgumentNullException(nameof(effect));
 
             if (effect.DurationPolicy == DurationPolicy.Instant)
             {
-                Execute(effect, level, source);
+                Execute(effect, level, source, setByCaller);
                 return null;
             }
 
@@ -71,14 +72,15 @@ namespace Jbltx.Ugas.Runtime
                 switch (effect.ExecutionPolicy)
                 {
                     case ExecutionPolicy.RunInMerge:
-                        // Fold into the existing instance: add a stack and refresh its duration + source.
+                        // Fold into the existing instance: add a stack and refresh its duration + source + caller data.
                         existing.Stacks++;
                         existing.Source = source;
+                        existing.SetByCaller = setByCaller;
                         if (existing.HasDuration)
-                            existing.RemainingDuration = _runtime.ResolveMagnitude(effect.Duration, level, source);
+                            existing.RemainingDuration = _runtime.ResolveMagnitude(effect.Duration, level, source, setByCaller);
                         if (existing.IsPeriodic && effect.Period.ExecuteOnApplication)
                         {
-                            Execute(effect, level, source);
+                            Execute(effect, level, source, setByCaller);
                             existing.ExecutionCount++;
                         }
                         _runtime.RecalculateAttributes();
@@ -86,7 +88,7 @@ namespace Jbltx.Ugas.Runtime
 
                     case ExecutionPolicy.RunInSequence:
                         // Queue behind the active instance; promoted when it ends (see RemoveAt).
-                        var queued = NewRecord(effect, level, instigatorId, source);
+                        var queued = NewRecord(effect, level, instigatorId, source, setByCaller);
                         _pending.Add(queued);
                         return queued;
 
@@ -94,7 +96,7 @@ namespace Jbltx.Ugas.Runtime
                 }
             }
 
-            return ActivateNew(effect, level, instigatorId, source);
+            return ActivateNew(effect, level, instigatorId, source, setByCaller);
         }
 
         private ActiveGameplayEffect FindActive(GameplayEffectDefinition effect)
@@ -105,7 +107,8 @@ namespace Jbltx.Ugas.Runtime
         }
 
         // Builds a pooled record without adding it to the active set.
-        private ActiveGameplayEffect NewRecord(GameplayEffectDefinition effect, int level, int instigatorId, IUgasRuntime source)
+        private ActiveGameplayEffect NewRecord(GameplayEffectDefinition effect, int level, int instigatorId, IUgasRuntime source,
+            IReadOnlyDictionary<string, float> setByCaller = null)
         {
             var a = Rent();
             a.Handle = _nextHandle++;
@@ -113,10 +116,11 @@ namespace Jbltx.Ugas.Runtime
             a.Level = level;
             a.InstigatorId = instigatorId;
             a.Source = source;
+            a.SetByCaller = setByCaller;
             if (effect.DurationPolicy == DurationPolicy.HasDuration)
             {
                 a.HasDuration = true;
-                a.RemainingDuration = _runtime.ResolveMagnitude(effect.Duration, level, source);
+                a.RemainingDuration = _runtime.ResolveMagnitude(effect.Duration, level, source, setByCaller);
             }
             else
             {
@@ -127,9 +131,10 @@ namespace Jbltx.Ugas.Runtime
         }
 
         // Adds a record to the active set: grants tags, fires an apply-time periodic tick, recalculates.
-        private ActiveGameplayEffect ActivateNew(GameplayEffectDefinition effect, int level, int instigatorId, IUgasRuntime source)
+        private ActiveGameplayEffect ActivateNew(GameplayEffectDefinition effect, int level, int instigatorId, IUgasRuntime source,
+            IReadOnlyDictionary<string, float> setByCaller = null)
         {
-            var active = NewRecord(effect, level, instigatorId, source);
+            var active = NewRecord(effect, level, instigatorId, source, setByCaller);
             _active.Add(active);
 
             var granted = effect.GrantedTags;
@@ -137,7 +142,7 @@ namespace Jbltx.Ugas.Runtime
 
             if (active.IsPeriodic && effect.Period.ExecuteOnApplication)
             {
-                Execute(effect, level, source);
+                Execute(effect, level, source, setByCaller);
                 active.ExecutionCount++;
             }
 
@@ -169,7 +174,7 @@ namespace Jbltx.Ugas.Runtime
         /// </summary>
         public void RestoreActive(GameplayEffectDefinition effect, int level, bool hasDuration,
             float remainingDuration, float periodElapsed, int executionCount, int stacks,
-            IUgasRuntime source = null, int instigatorId = -1)
+            IUgasRuntime source = null, int instigatorId = -1, IReadOnlyDictionary<string, float> setByCaller = null)
         {
             if (effect == null) return;
 
@@ -184,6 +189,7 @@ namespace Jbltx.Ugas.Runtime
             a.Stacks = stacks < 1 ? 1 : stacks;
             a.Source = source;          // rebind instigator/source so §9.4.2 source-scaled magnitudes re-derive correctly (§14.3.2)
             a.InstigatorId = instigatorId;
+            a.SetByCaller = setByCaller; // rebind per-application SetByCaller magnitudes (§9.4.2)
             _active.Add(a);
 
             var granted = effect.GrantedTags;
@@ -210,7 +216,7 @@ namespace Jbltx.Ugas.Runtime
                     while (period > 0f && active.PeriodElapsed >= period - Epsilon)
                     {
                         active.PeriodElapsed -= period;
-                        Execute(active.Definition, active.Level, active.Source);
+                        Execute(active.Definition, active.Level, active.Source, active.SetByCaller);
                         active.ExecutionCount++;
                     }
                 }
@@ -265,13 +271,14 @@ namespace Jbltx.Ugas.Runtime
 
         // Applies an Instant effect's modifiers to base values, then fires side effects. Source-scaled
         // magnitudes (§9.4.2) resolve against the source/instigator when one is supplied.
-        private void Execute(GameplayEffectDefinition effect, int level, IUgasRuntime source)
+        private void Execute(GameplayEffectDefinition effect, int level, IUgasRuntime source,
+            IReadOnlyDictionary<string, float> setByCaller = null)
         {
             var mods = effect.Modifiers;
             for (int i = 0; i < mods.Count; i++)
             {
                 var mod = mods[i];
-                float magnitude = _runtime.ResolveMagnitude(mod.Magnitude, level, source);
+                float magnitude = _runtime.ResolveMagnitude(mod.Magnitude, level, source, setByCaller);
                 switch (mod.Operation)
                 {
                     case ModifierOp.Add:
@@ -300,7 +307,7 @@ namespace Jbltx.Ugas.Runtime
             if (effect.HasExecution && _runtime is UgasController target)
             {
                 var calc = target.ResolveExecution(effect.ExecutionClass);
-                calc?.Execute(new ExecutionContext { Source = source, Target = target, Level = level, Rng = target.NextExecutionRandom() });
+                calc?.Execute(new ExecutionContext { Source = source, Target = target, Level = level, Rng = target.NextExecutionRandom(), SetByCaller = setByCaller });
             }
 
             _runtime.RecalculateAttributes();
