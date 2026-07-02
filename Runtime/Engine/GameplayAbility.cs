@@ -29,6 +29,8 @@ namespace Jbltx.Ugas.Runtime
         // Tags the cooldown effect grants for its duration; their presence means "on cooldown".
         private readonly List<GameplayTag> _cooldownTags = new List<GameplayTag>();
         private readonly List<IAbilityTask> _runningTasks = new List<IAbilityTask>();
+        // Index of the task currently pausing the ability; -1 when no sequence is running (§10.2).
+        private int _currentTaskIndex = -1;
 
         /// <summary>The ability's currently-instantiated tasks (§10), in declaration order.</summary>
         public IReadOnlyList<IAbilityTask> RunningTasks => _runningTasks;
@@ -149,28 +151,52 @@ namespace Jbltx.Ugas.Runtime
             for (int i = 0; i < _activationOwned.Count; i++) runtime.OwnedTags.AddTag(_activationOwned[i]);
         }
 
-        /// <summary>Called on entering Active: instantiates and activates the ability's tasks (§10).</summary>
+        /// <summary>
+        /// Called on entering Active: instantiates the ability's tasks (§10) and activates the FIRST one.
+        /// Tasks run in declaration order — each pauses the ability until it completes, then the next is
+        /// activated (§10.1/§10.2: a task "pauses ability execution … then resumes the owning ability").
+        /// They are sequential, not concurrent: at most one task is Active at a time. See <see cref="TickTasks"/>.
+        /// </summary>
         protected virtual void OnActivate(IUgasRuntime runtime)
         {
-            // Spatial tasks (§10.3/§17.3) need the instigator + its spatial provider; other tasks ignore it.
+            // Spatial/targeted tasks (§10.3/§17.3) need the instigator + its spatial provider; others ignore it.
             var instigator = runtime as UgasController;
             var ctx = new AbilityTaskContext(instigator, instigator != null ? instigator.SpatialProvider : null, Level);
 
             var tasks = Definition.Tasks;
             for (int i = 0; i < tasks.Count; i++)
-            {
-                var task = AbilityTaskFactory.Create(tasks[i], ctx);
-                task.Activate();
-                _runningTasks.Add(task);
-            }
+                _runningTasks.Add(AbilityTaskFactory.Create(tasks[i], ctx));
+
+            _currentTaskIndex = -1;
+            AdvanceToNextTask(); // activates task 0, if any
         }
 
-        /// <summary>Advances this ability's active tasks; called by the controller each tick (§10).</summary>
+        /// <summary>
+        /// Advances this ability's task sequence one step, called by the controller each tick (§10.2):
+        /// ticks the current (only) Active task, and when it completes, activates the next. When the last
+        /// task completes the ability auto-ends (releasing its owned tags and returning to Granted so it can
+        /// re-activate). A cancelled task cancels the ability.
+        /// </summary>
         public void TickTasks(float deltaSeconds)
         {
             if (State != AbilityState.Active) return;
-            for (int i = 0; i < _runningTasks.Count; i++)
-                if (_runningTasks[i].State == AbilityTaskState.Active) _runningTasks[i].Tick(deltaSeconds);
+            if (_currentTaskIndex < 0 || _currentTaskIndex >= _runningTasks.Count) return;
+
+            var task = _runningTasks[_currentTaskIndex];
+            if (task.State == AbilityTaskState.Active) task.Tick(deltaSeconds);
+
+            if (task.State == AbilityTaskState.Completed) AdvanceToNextTask();
+            else if (task.State == AbilityTaskState.Cancelled) CancelAbility();
+        }
+
+        /// <summary>Activates the next task in declaration order; auto-ends the ability when the sequence is exhausted.</summary>
+        private void AdvanceToNextTask()
+        {
+            _currentTaskIndex++;
+            if (_currentTaskIndex < _runningTasks.Count)
+                _runningTasks[_currentTaskIndex].Activate();
+            else if (_runningTasks.Count > 0 && State == AbilityState.Active)
+                EndAbility(); // all authored tasks done → the ability's latent work is complete (§10.2)
         }
 
         /// <summary>Called when ending: cancels any in-flight tasks. <paramref name="cancelled"/> distinguishes cancel from normal end.</summary>
@@ -179,6 +205,7 @@ namespace Jbltx.Ugas.Runtime
             for (int i = 0; i < _runningTasks.Count; i++)
                 if (_runningTasks[i].State == AbilityTaskState.Active) _runningTasks[i].Cancel();
             _runningTasks.Clear();
+            _currentTaskIndex = -1;
         }
 
         private static void Resolve(GameplayTagRegistryRuntime registry, IReadOnlyList<string> names, List<GameplayTag> into)
