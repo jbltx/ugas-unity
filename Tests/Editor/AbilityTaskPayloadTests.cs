@@ -3,6 +3,7 @@ using Jbltx.Ugas.Abilities;
 using Jbltx.Ugas.Definitions;
 using Jbltx.Ugas.Kernel;
 using Jbltx.Ugas.Runtime;
+using Jbltx.Ugas.Spatial;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -140,6 +141,66 @@ namespace Jbltx.Ugas.Tests.Editor
             for (int i = 0; i < 5; i++) owner.Tick(0.1f);
             Assert.That(owner.GetBaseValue("Materials"), Is.EqualTo(5f).Within(1e-4f), "payload ran once the wait completed");
             Assert.That(ability.State, Is.EqualTo(AbilityState.Granted), "sequence exhausted → ability auto-ended (re-activatable)");
+        }
+
+        [Test]
+        public void ApplyEffectToTarget_HitsNearestMatchingEnemy_ViaAbilityActivation()
+        {
+            var attacker = Owner();
+            attacker.RegisterEffect(Effect("GE_Shot", "Health", -20f, DurationPolicy.Instant));
+
+            var world = new UgasSpatialWorld();
+            attacker.SpatialProvider = world.Provider; // engine binding hands the instigator its provider
+
+            var enemy = Owner();
+            enemy.transform.position = new Vector3(5, 0, 0);
+            enemy.GrantTag("Faction.Hostile");
+            var friendly = Owner();
+            friendly.transform.position = new Vector3(3, 0, 0); // CLOSER, but not hostile → filtered out
+            world.Register(enemy);
+            world.Register(friendly);
+
+            // GA_Fire: apply GE_Shot to the nearest Faction.Hostile within range 10. (enemy and friendly
+            // have independent tag registries — this also exercises the cross-registry soundness of F3.)
+            var fire = ScriptableObject.CreateInstance<GameplayAbilityDefinition>();
+            _spawned.Add(fire);
+            fire.Populate("GA_Fire", default, new List<AbilityTaskDefinition>
+            {
+                new AbilityTaskDefinition
+                {
+                    Type = "ApplyEffectToTarget",
+                    Params = new List<TaskParam>
+                    {
+                        new TaskParam { Key = "EffectClass", Value = "GE_Shot" },
+                        new TaskParam { Key = "MaxRange", Value = "10" },
+                        new TaskParam { Key = "RequireTag", Value = "Faction.Hostile" },
+                    },
+                },
+            }, null, null);
+            attacker.GrantAbility(fire);
+
+            Assert.That(attacker.TryActivateAbility("GA_Fire"), Is.True);
+            attacker.Tick(0.016f);
+
+            Assert.That(enemy.GetCurrentValue("Health"), Is.EqualTo(80f).Within(1e-4f), "shot hit the nearest hostile");
+            Assert.That(friendly.GetCurrentValue("Health"), Is.EqualTo(100f).Within(1e-4f), "the closer non-hostile was spared by the tag filter");
+        }
+
+        [Test]
+        public void WaitTagAdded_GatesUntilOwnerGainsTheTag()
+        {
+            var owner = Owner();
+            var task = AbilityTaskFactory.Create(
+                new AbilityTaskDefinition { Type = "WaitTagAdded", Params = new List<TaskParam> { new TaskParam { Key = "Tag", Value = "State.Ready" } } },
+                new AbilityTaskContext(owner, owner.SpatialProvider, 1));
+            task.Activate();
+
+            task.Tick(0.1f);
+            Assert.That(task.State, Is.EqualTo(AbilityTaskState.Active), "waits while the tag is absent");
+
+            owner.GrantTag("State.Ready");
+            task.Tick(0.1f);
+            Assert.That(task.State, Is.EqualTo(AbilityTaskState.Completed), "completes once the owner gains the tag");
         }
     }
 }

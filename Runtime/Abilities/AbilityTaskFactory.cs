@@ -61,6 +61,23 @@ namespace Jbltx.Ugas.Abilities
                         ctx.Level,
                         def.TickInterval,
                         def.Priority);
+                case "ApplyEffectToTarget":
+                    return new ApplyEffectToTargetTask(
+                        ctx.Instigator,
+                        ctx.Provider,
+                        ctx.Instigator != null ? ctx.Instigator.ResolveEffect(GetString(def.Params, "EffectClass", null)) : null,
+                        GetFloat(def.Params, "MaxRange", GetFloat(def.Params, "Range", GetFloat(def.Params, "Radius", 0f))),
+                        GetString(def.Params, "RequireTag", GetString(def.Params, "TargetTag", null)),
+                        GetString(def.Params, "IgnoreTargetsWithTag", GetString(def.Params, "IgnoreTag", null)),
+                        ctx.Level,
+                        def.TickInterval,
+                        def.Priority);
+                case "WaitTagAdded":
+                    return new WaitTagAddedTask(
+                        ctx.Instigator,
+                        GetString(def.Params, "Tag", GetString(def.Params, "WaitTag", null)),
+                        def.TickInterval,
+                        def.Priority);
                 default:
                     return new NoOpTask(def.Type, def.TickInterval, def.Priority);
             }
