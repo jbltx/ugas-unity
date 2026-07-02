@@ -93,5 +93,29 @@ namespace Jbltx.Ugas.Tests.Editor
             Assert.That(player.OwnedTags.HasTag("Zone.Hazard.Fire"), Is.True);
             Assert.That(enemy.OwnedTags.HasTag("Zone.Hazard.Fire"), Is.True);
         }
+
+        [Test]
+        public void Unload_DespawnsInstances_InEditMode_WithoutThrowing()
+        {
+            var rpg = RpgSet();
+            var cfg = Config("Unit", rpg);
+
+            var scene = ScriptableObject.CreateInstance<SceneDefinition>();
+            _spawned.Add(scene);
+            scene.Populate("TearDownArena",
+                new List<ScenePlacement> { new ScenePlacement { Controller = cfg, InstanceId = "u1", Position = Vector3.zero } },
+                new List<SceneRegionPlacement>(),
+                new List<SceneSpawnPoint>());
+
+            var world = new UgasSpatialWorld();
+            var loaded = SceneLoader.Load(scene, world);
+            var unit = loaded.Instance("u1");
+            Assert.That(unit, Is.Not.Null, "instance spawned");
+
+            // Regression: Unload used Object.Destroy, which is deferred and throws off the play loop, so a
+            // §18 scene couldn't be torn down in EditMode (the harness's own eval substrate).
+            Assert.DoesNotThrow(() => loaded.Unload(), "Unload must not throw in EditMode");
+            Assert.That(unit == null, Is.True, "the spawned GameObject was destroyed on unload");
+        }
     }
 }

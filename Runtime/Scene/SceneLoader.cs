@@ -58,7 +58,10 @@ namespace Jbltx.Ugas.Scene
                 var gc = _spawned[i];
                 if (gc == null) continue;
                 _world.Unregister(gc);
-                Object.Destroy(gc.gameObject);
+                // DestroyImmediate off the play loop (EditMode tests / editor tooling); Destroy at runtime.
+                // Object.Destroy is deferred and throws in edit mode, so a scene couldn't be torn down there.
+                if (Application.isPlaying) Object.Destroy(gc.gameObject);
+                else Object.DestroyImmediate(gc.gameObject);
             }
             for (int i = 0; i < _regions.Count; i++) _world.RemoveRegion(_regions[i]);
             _spawned.Clear();

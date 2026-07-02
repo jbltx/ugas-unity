@@ -127,6 +127,21 @@ namespace Jbltx.Ugas.Editor
                 StrList(m.Get("GrantedTags")),
                 StrList(m.Get("ApplicationRequiredTags")),
                 StrList(m.Get("GameplayCues")));
+
+            // §9.6 custom execution: the schema's `Executions` is a list of { CalculatorClass }. The
+            // reference effect runs a single ExecCalc, so map the first CalculatorClass. Previously dropped,
+            // which left HasExecution=false — imported execution-driven combat effects silently did nothing.
+            if (m.Get("Executions") is YamlSequence execs)
+            {
+                foreach (var item in execs.Items)
+                {
+                    if (item is YamlMapping em)
+                    {
+                        var cls = Str(em.Get("CalculatorClass"));
+                        if (!string.IsNullOrEmpty(cls)) { so.SetExecutionClass(cls); break; }
+                    }
+                }
+            }
         }
 
         private static MagnitudeDefinition MapMagnitude(YamlMapping m)
