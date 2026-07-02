@@ -63,6 +63,19 @@ namespace Jbltx.Ugas.Tests.Editor
         }
 
         [Test]
+        public void ImportsEffect_MapsExecutionsToExecutionClass()
+        {
+            // Regression: the mapper read ExecutionPolicy but dropped the schema's `Executions` list, so an
+            // imported ExecCalc-driven combat effect had HasExecution=false → dealt zero damage (strategy-eval).
+            var so = ScriptableObject.CreateInstance<GameplayEffectDefinition>();
+            var yaml = "Name: GE_ExecCombat\nDurationPolicy: Instant\nExecutions:\n  - CalculatorClass: ExecCalc_ArmorMitigation\n";
+            SpecEntityMapper.PopulateEffect(so, (YamlMapping)YamlParser.Parse(yaml));
+
+            Assert.That(so.HasExecution, Is.True, "importer maps Executions → the effect's execution class");
+            Assert.That(so.ExecutionClass, Is.EqualTo("ExecCalc_ArmorMitigation"));
+        }
+
+        [Test]
         public void ImportsEffect_HasDurationWithPeriod()
         {
             var so = ScriptableObject.CreateInstance<GameplayEffectDefinition>();
