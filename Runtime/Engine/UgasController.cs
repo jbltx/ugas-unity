@@ -486,6 +486,12 @@ namespace Jbltx.Ugas.Runtime
             if (attr != null) { attr.BaseValue = value; ClampBase(attr); }
         }
 
+        public void MultiplyBaseValue(string attributeName, float magnitude)
+        {
+            var attr = FindAttribute(attributeName);
+            if (attr != null) { attr.BaseValue *= 1f + magnitude; ClampBase(attr); }
+        }
+
         public void GrantTag(string tag) { EnsureInitialized(); _ownedTags.AddTag(tag); }
         public void RemoveGrantedTag(string tag) { EnsureInitialized(); _ownedTags.RemoveTag(tag); }
 

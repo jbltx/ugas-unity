@@ -279,7 +279,15 @@ namespace Jbltx.Ugas.Runtime
                         _runtime.SetBaseValue(mod.Attribute, magnitude);
                         break;
                     case ModifierOp.Multiply:
-                        // TODO: define exact Instant-Multiply semantics against BaseValue.
+                        // §5.2/§5.3: an *Instant* Multiply scales the Base Value by (1 + magnitude) — the
+                        // same signed-bonus convention as the Current-Value pipeline (e.g. +1.0 doubles,
+                        // -0.25 removes 25%). Previously an unhandled no-op. A DURATIONAL effect's Multiply
+                        // is a Current-Value modifier (aggregated in RecalculateAttributes); it is NOT written
+                        // to the base, including on the periodic ticks of a periodic durational effect (which
+                        // execute only Add/AddPost/Override to the base) — otherwise it would double-count
+                        // against its own current-value modifier and compound each tick.
+                        if (effect.DurationPolicy == DurationPolicy.Instant)
+                            _runtime.MultiplyBaseValue(mod.Attribute, magnitude);
                         break;
                 }
             }
