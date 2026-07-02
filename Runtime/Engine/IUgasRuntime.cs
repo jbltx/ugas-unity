@@ -32,6 +32,13 @@ namespace Jbltx.Ugas.Runtime
         /// <summary>Overrides the named attribute's base value (Instant Override).</summary>
         void SetBaseValue(string attributeName, float value);
 
+        /// <summary>
+        /// Scales the named attribute's base value by <c>(1 + <paramref name="magnitude"/>)</c> — the
+        /// §5.3 Multiply convention applied to the Base Value by an Instant effect (§5.2). e.g. magnitude
+        /// +1.0 doubles the base, -0.25 removes 25%.
+        /// </summary>
+        void MultiplyBaseValue(string attributeName, float magnitude);
+
         /// <summary>Grants a tag (by name) for the lifetime of an active effect.</summary>
         void GrantTag(string tag);
 
